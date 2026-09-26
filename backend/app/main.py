@@ -3,9 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
 from app.core.supabase_client import supabase_admin
-
-from fastapi import Depends
-from app.core.auth import get_current_user
+from app.api.v1.auth import router as auth_router
 
 
 app = FastAPI(
@@ -25,6 +23,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+app.include_router(auth_router)
 
 
 @app.get("/")
@@ -57,10 +58,3 @@ def health():
             status_code=503,
             detail=f"Database connection failed: {str(exc)}",
         )
-
-@app.get("/api/v1/me")
-def get_me(user=Depends(get_current_user)):
-    return {
-        "id": user.id,
-        "email": user.email,
-    }    
