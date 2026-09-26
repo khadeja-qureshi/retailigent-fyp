@@ -1,0 +1,27 @@
+{
+  "name": "retailigent-fyp",
+  "version": "1.0.0",
+  "description": "Retailigent — An Agentic AI-powered intelligent clothing retail assistant using NLP, ML, Supabase, Smart Cart automation, and branch-level inventory intelligence",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/khadeja-qureshi/retailigent-fyp.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/khadeja-qureshi/retailigent-fyp/issues"
+  },
+  "homepage": "https://github.com/khadeja-qureshi/retailigent-fyp#readme",
+  "devDependencies": {
+    "supabase": "^2.118.0"
+  }
+}
