@@ -1,5 +1,6 @@
 from app.core.supabase_client import supabase_admin
 from app.services.embedding_service import generate_embedding
+from app.services.pricing_service import get_effective_prices
 
 
 DEFAULT_MATCH_COUNT = 10
@@ -15,8 +16,8 @@ def search_variants(
 ) -> list[dict]:
     """
     Perform hybrid keyword + semantic search and enrich
-    results with product, variant, color, size, image,
-    branch, and inventory information.
+    results with product, variant, color, size, pricing,
+    image, branch, and inventory information.
     """
 
     if not query or not query.strip():
@@ -60,6 +61,13 @@ def search_variants(
         result["product_id"]
         for result in search_results
     }
+
+    # ---------------------------------------------------------
+    # 3.5 Fetch authoritative pricing for all variants
+    # ---------------------------------------------------------
+    pricing_by_variant = get_effective_prices(
+        list(variant_ids)
+    )
 
     # ---------------------------------------------------------
     # 4. Fetch products
@@ -286,6 +294,10 @@ def search_variants(
                         variant.get("size_id")
                     ),
                 },
+
+                "pricing": pricing_by_variant.get(
+                    variant_id
+                ),
 
                 "images": images_by_product.get(
                     product_id,

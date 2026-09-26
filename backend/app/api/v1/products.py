@@ -3,6 +3,7 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException, Query
 
 from app.core.supabase_client import supabase_admin
+from app.services.pricing_service import get_effective_prices
 
 
 router = APIRouter(
@@ -137,7 +138,7 @@ def list_products(
                 product.get("category_id") in matching_category_ids
                 or categories.get(
                     product.get("category_id"),
-                    {}
+                    {},
                 ).get("parent_id") in matching_parent_ids
             )
         ]
@@ -166,7 +167,7 @@ def list_products(
         for image in image_response.data:
             images_by_product.setdefault(
                 image["product_id"],
-                []
+                [],
             ).append(image)
 
     # Build catalog response
@@ -186,7 +187,7 @@ def list_products(
 
         product["images"] = images_by_product.get(
             product["id"],
-            []
+            [],
         )
 
     return {
@@ -244,6 +245,17 @@ def get_product(product_id: str):
 
     variants = variant_response.data
 
+    # Collect variant IDs
+    variant_ids = [
+        variant["id"]
+        for variant in variants
+    ]
+
+    # Get authoritative pricing for all variants
+    pricing_by_variant = get_effective_prices(
+        variant_ids
+    )
+
     # Collect referenced color and size IDs
     color_ids = {
         variant["color_id"]
@@ -293,7 +305,7 @@ def get_product(product_id: str):
             for size in size_response.data
         }
 
-    # Attach color and size information
+    # Attach color, size, and authoritative pricing
     for variant in variants:
         color_id = variant.get("color_id")
         size_id = variant.get("size_id")
@@ -301,12 +313,11 @@ def get_product(product_id: str):
         variant["color"] = colors.get(color_id)
         variant["size"] = sizes.get(size_id)
 
-    # Get inventory for all active variants
-    variant_ids = [
-        variant["id"]
-        for variant in variants
-    ]
+        variant["pricing"] = pricing_by_variant.get(
+            variant["id"]
+        )
 
+    # Get inventory for all active variants
     inventory_by_variant = {}
 
     if variant_ids:
@@ -325,7 +336,7 @@ def get_product(product_id: str):
         for inventory in inventory_response.data:
             inventory_by_variant.setdefault(
                 inventory["variant_id"],
-                []
+                [],
             ).append(inventory)
 
         # Collect branch IDs
@@ -379,7 +390,7 @@ def get_product(product_id: str):
     for variant in variants:
         variant["inventory"] = inventory_by_variant.get(
             variant["id"],
-            []
+            [],
         )
 
     product["variants"] = variants
