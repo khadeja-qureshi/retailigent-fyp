@@ -8,7 +8,8 @@ from app.api.v1.products import router as products_router
 from app.api.v1.inventory import router as inventory_router
 from app.api.v1.search import router as search_router
 from app.api.v1.pricing import router as pricing_router
-
+from app.api.v1.cart import router as cart_router
+from app.api.v1.wishlist import router as wishlist_router
 
 app = FastAPI(
     title="Retailigent API",
@@ -34,6 +35,8 @@ app.include_router(products_router)
 app.include_router(inventory_router)
 app.include_router(search_router)
 app.include_router(pricing_router)
+app.include_router(cart_router)
+app.include_router(wishlist_router)
 
 @app.get("/")
 def root():
