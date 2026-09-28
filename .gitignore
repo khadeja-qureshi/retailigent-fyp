@@ -34,3 +34,9 @@ supabase/.temp/
 
 # Logs
 *.log
+
+.pytest_cache/
+
+frontend/.env.local
+frontend/.next/
+frontend/node_modules/
