@@ -194,3 +194,117 @@ export function removeWishlistItem(
     }
   );
 }
+
+export interface ReservationBranch {
+  id: string;
+  name: string;
+  city?: string | null;
+  area?: string | null;
+  address?: string | null;
+}
+
+export interface Reservation {
+  id: string;
+  customer_id: string;
+  variant_id: string;
+  branch_id: string;
+  quantity: number;
+
+  status:
+    | "active"
+    | "released"
+    | "expired"
+    | "cancelled"
+    | "converted";
+
+  expires_at: string;
+  released_at?: string | null;
+  created_at: string;
+
+  product?: Product | null;
+  variant?: Variant | null;
+  branch?: ReservationBranch | null;
+}
+
+export interface ReservationListResponse {
+  items: Reservation[];
+  count: number;
+}
+
+
+export function getReservations() {
+  return apiFetch<ReservationListResponse>(
+    "/api/v1/reservations"
+  );
+}
+
+
+export function createReservation(
+  variantId: string,
+  branchId: string,
+  quantity: number,
+  holdMinutes = 15
+) {
+  return apiFetch<Reservation>(
+    "/api/v1/reservations",
+    {
+      method: "POST",
+      body: JSON.stringify({
+        variant_id: variantId,
+        branch_id: branchId,
+        quantity,
+        hold_minutes: holdMinutes,
+      }),
+    }
+  );
+}
+
+
+export function releaseReservation(
+  reservationId: string
+) {
+  return apiFetch<{
+    released: boolean;
+    reservation_id: string;
+  }>(
+    `/api/v1/reservations/${reservationId}`,
+    {
+      method: "DELETE",
+    }
+  );
+}
+
+export interface InventoryBranch {
+  id: string;
+  name: string;
+  city?: string | null;
+  area?: string | null;
+  address?: string | null;
+}
+
+export interface VariantInventoryRow {
+  id: string;
+  branch_id: string;
+  variant_id: string;
+  on_hand_quantity: number;
+  reserved_quantity: number;
+  safety_stock: number;
+  available_quantity: number;
+  status?: string;
+  branch?: InventoryBranch | null;
+}
+
+export interface VariantInventoryResponse {
+  variant_id: string;
+  inventory: VariantInventoryRow[];
+  count: number;
+}
+
+
+export function getVariantInventory(
+  variantId: string
+) {
+  return apiFetch<VariantInventoryResponse>(
+    `/api/v1/inventory/variant/${variantId}`
+  );
+}

@@ -130,6 +130,13 @@ export default function CartPage() {
           </Link>
         </div>
 
+        <Link
+  href="/reservations"
+  className="text-sm text-neutral-300 underline"
+>
+  Reservations
+</Link>
+
         {error && (
           <div className="mb-6 rounded-xl border border-red-900 bg-red-950/40 p-4 text-red-300">
             {error}
