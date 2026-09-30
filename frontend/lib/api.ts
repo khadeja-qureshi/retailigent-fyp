@@ -308,3 +308,34 @@ export function getVariantInventory(
     `/api/v1/inventory/variant/${variantId}`
   );
 }
+
+export interface OrderItem {
+  variant_id: string;
+  quantity: number;
+  unit_price: number;
+  line_total: number;
+  product_snapshot: {
+    product_name?: string;
+    variant_sku?: string;
+    price?: number;
+    [key: string]: unknown;
+  };
+}
+
+export interface Order {
+  id: string;
+  branch_id?: string | null;
+  status: string;
+  subtotal: number;
+  discount: number;
+  total: number;
+  currency: string;
+  source: string;
+  created_at: string;
+  items: OrderItem[];
+}
+
+
+export function getOrders() {
+  return apiFetch<Order[]>("/api/v1/orders");
+}

@@ -111,6 +111,7 @@ export default function CartPage() {
   return (
     <main className="min-h-screen bg-neutral-950 text-white">
       <div className="mx-auto max-w-3xl p-6 md:p-10">
+
         <div className="mb-8 flex items-center justify-between">
           <div>
             <p className="text-sm text-neutral-500">
@@ -122,20 +123,29 @@ export default function CartPage() {
             </h1>
           </div>
 
-          <Link
-            href="/wishlist"
-            className="text-sm text-neutral-300 underline"
-          >
-            Wishlist
-          </Link>
-        </div>
+          <nav className="flex gap-4 text-sm text-neutral-300">
+            <Link
+              href="/wishlist"
+              className="underline"
+            >
+              Wishlist
+            </Link>
 
-        <Link
-  href="/reservations"
-  className="text-sm text-neutral-300 underline"
->
-  Reservations
-</Link>
+            <Link
+              href="/reservations"
+              className="underline"
+            >
+              Reservations
+            </Link>
+
+            <Link
+              href="/orders"
+              className="underline"
+            >
+              Orders
+            </Link>
+          </nav>
+        </div>
 
         {error && (
           <div className="mb-6 rounded-xl border border-red-900 bg-red-950/40 p-4 text-red-300">
@@ -200,6 +210,7 @@ export default function CartPage() {
             onRemove={handleRemove}
           />
         )}
+
       </div>
     </main>
   );

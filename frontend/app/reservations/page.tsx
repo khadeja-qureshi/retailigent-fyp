@@ -1,9 +1,6 @@
 "use client";
 
-import {
-  useEffect,
-  useState,
-} from "react";
+import { useEffect, useState } from "react";
 
 import Link from "next/link";
 
@@ -18,57 +15,30 @@ import {
   releaseReservation,
 } from "@/lib/api";
 
-
 export default function ReservationsPage() {
-  const [
-    reservations,
-    setReservations,
-  ] =
-    useState<ReservationListResponse | null>(
-      null
-    );
+  const [reservations, setReservations] =
+    useState<ReservationListResponse | null>(null);
 
-  const [
-    variantId,
-    setVariantId,
-  ] = useState("");
+  const [variantId, setVariantId] = useState("");
 
-  const [
-    quantity,
-    setQuantity,
-  ] = useState(1);
+  const [quantity, setQuantity] = useState(1);
 
-  const [
-    inventory,
-    setInventory,
-  ] =
+  const [inventory, setInventory] =
     useState<VariantInventoryRow[]>([]);
 
-  const [
-    branchId,
-    setBranchId,
-  ] = useState("");
+  const [branchId, setBranchId] = useState("");
 
-  const [
-    error,
-    setError,
-  ] =
+  const [error, setError] =
     useState<string | null>(null);
 
-  const [
-    busy,
-    setBusy,
-  ] =
+  const [busy, setBusy] =
     useState<string | null>(null);
-
 
   async function loadReservations() {
     try {
       setError(null);
 
-      setReservations(
-        await getReservations()
-      );
+      setReservations(await getReservations());
     } catch (error) {
       setError(
         error instanceof Error
@@ -78,31 +48,25 @@ export default function ReservationsPage() {
     }
   }
 
-
   useEffect(() => {
     loadReservations();
   }, []);
-
 
   async function findBranches() {
     try {
       setError(null);
 
-      const response =
-        await getVariantInventory(
-          variantId.trim()
-        );
-
-      const available =
-        response.inventory.filter(
-          (row) =>
-            row.branch &&
-            row.available_quantity > 0
-        );
-
-      setInventory(
-        available
+      const response = await getVariantInventory(
+        variantId.trim()
       );
+
+      const available = response.inventory.filter(
+        (row) =>
+          row.branch &&
+          row.available_quantity > 0
+      );
+
+      setInventory(available);
 
       setBranchId(
         available[0]?.branch_id ?? ""
@@ -113,7 +77,6 @@ export default function ReservationsPage() {
           "No active branch currently has stock."
         );
       }
-
     } catch (error) {
       setError(
         error instanceof Error
@@ -122,7 +85,6 @@ export default function ReservationsPage() {
       );
     }
   }
-
 
   async function holdItem() {
     try {
@@ -138,23 +100,18 @@ export default function ReservationsPage() {
 
       await loadReservations();
       await findBranches();
-
     } catch (error) {
       setError(
         error instanceof Error
           ? error.message
           : "Unable to reserve item."
       );
-
     } finally {
       setBusy(null);
     }
   }
 
-
-  async function handleRelease(
-    id: string
-  ) {
+  async function handleRelease(id: string) {
     try {
       setBusy(id);
 
@@ -165,27 +122,22 @@ export default function ReservationsPage() {
       if (variantId.trim()) {
         await findBranches();
       }
-
     } catch (error) {
       setError(
         error instanceof Error
           ? error.message
           : "Unable to release reservation."
       );
-
     } finally {
       setBusy(null);
     }
   }
 
-
   return (
     <main className="min-h-screen bg-neutral-950 text-white">
-
       <div className="mx-auto max-w-3xl p-6 md:p-10">
 
         <div className="mb-8 flex justify-between">
-
           <div>
             <p className="text-sm text-neutral-500">
               Retailigent
@@ -210,8 +162,14 @@ export default function ReservationsPage() {
             >
               Wishlist
             </Link>
-          </div>
 
+            <Link
+              href="/orders"
+              className="underline"
+            >
+              Orders
+            </Link>
+          </div>
         </div>
 
         {error && (
@@ -221,7 +179,6 @@ export default function ReservationsPage() {
         )}
 
         <section className="mb-8 rounded-2xl border border-neutral-800 bg-neutral-900 p-6">
-
           <h2 className="text-xl font-semibold">
             Hold an item
           </h2>
@@ -234,10 +191,7 @@ export default function ReservationsPage() {
           <input
             value={variantId}
             onChange={(event) => {
-              setVariantId(
-                event.target.value
-              );
-
+              setVariantId(event.target.value);
               setInventory([]);
               setBranchId("");
             }}
@@ -254,7 +208,6 @@ export default function ReservationsPage() {
 
           {inventory.length > 0 && (
             <>
-
               <label className="mt-5 block text-sm">
                 Branch
               </label>
@@ -262,27 +215,21 @@ export default function ReservationsPage() {
               <select
                 value={branchId}
                 onChange={(event) =>
-                  setBranchId(
-                    event.target.value
-                  )
+                  setBranchId(event.target.value)
                 }
                 className="mt-2 w-full rounded-lg border border-neutral-700 bg-neutral-950 p-3"
               >
-
-                {inventory.map(
-                  (row) => (
-                    <option
-                      key={row.branch_id}
-                      value={row.branch_id}
-                    >
-                      {row.branch?.name}
-                      {" — "}
-                      {row.available_quantity}
-                      {" available"}
-                    </option>
-                  )
-                )}
-
+                {inventory.map((row) => (
+                  <option
+                    key={row.branch_id}
+                    value={row.branch_id}
+                  >
+                    {row.branch?.name}
+                    {" — "}
+                    {row.available_quantity}
+                    {" available"}
+                  </option>
+                ))}
               </select>
 
               <label className="mt-5 block text-sm">
@@ -297,9 +244,7 @@ export default function ReservationsPage() {
                   setQuantity(
                     Math.max(
                       1,
-                      Number(
-                        event.target.value
-                      )
+                      Number(event.target.value)
                     )
                   )
                 }
@@ -308,19 +253,15 @@ export default function ReservationsPage() {
 
               <button
                 onClick={holdItem}
-                disabled={
-                  busy === "create"
-                }
+                disabled={busy === "create"}
                 className="mt-5 rounded-lg bg-white px-5 py-3 font-medium text-black disabled:opacity-50"
               >
                 {busy === "create"
                   ? "Creating hold..."
                   : "Hold for 15 minutes"}
               </button>
-
             </>
           )}
-
         </section>
 
         <h2 className="mb-4 text-xl font-semibold">
@@ -335,7 +276,6 @@ export default function ReservationsPage() {
           </p>
         ) : (
           <div className="space-y-4">
-
             {reservations.items.map(
               (reservation) => (
                 <ReservationBlock
@@ -350,12 +290,9 @@ export default function ReservationsPage() {
                 />
               )
             )}
-
           </div>
         )}
-
       </div>
-
     </main>
   );
 }

@@ -12,12 +12,9 @@ import {
   removeWishlistItem,
 } from "@/lib/api";
 
-
 export default function WishlistPage() {
   const [wishlist, setWishlist] =
-    useState<WishlistResponse | null>(
-      null
-    );
+    useState<WishlistResponse | null>(null);
 
   const [variantId, setVariantId] =
     useState("");
@@ -28,10 +25,10 @@ export default function WishlistPage() {
   const [busyItemId, setBusyItemId] =
     useState<string | null>(null);
 
-
   async function loadWishlist() {
     try {
       setError(null);
+
       setWishlist(
         await getWishlist()
       );
@@ -44,11 +41,9 @@ export default function WishlistPage() {
     }
   }
 
-
   useEffect(() => {
     loadWishlist();
   }, []);
-
 
   async function handleAdd() {
     if (!variantId.trim()) {
@@ -71,7 +66,6 @@ export default function WishlistPage() {
     }
   }
 
-
   async function handleRemove(
     itemId: string
   ) {
@@ -88,7 +82,6 @@ export default function WishlistPage() {
     }
   }
 
-
   return (
     <main className="min-h-screen bg-neutral-950 text-white">
       <div className="mx-auto max-w-3xl p-6 md:p-10">
@@ -103,12 +96,28 @@ export default function WishlistPage() {
             </h1>
           </div>
 
-          <Link
-            href="/cart"
-            className="text-sm text-neutral-300 underline"
-          >
-            Cart
-          </Link>
+          <div className="flex gap-4 text-sm">
+            <Link
+              href="/cart"
+              className="text-neutral-300 underline"
+            >
+              Cart
+            </Link>
+
+            <Link
+              href="/reservations"
+              className="text-neutral-300 underline"
+            >
+              Reservations
+            </Link>
+
+            <Link
+              href="/orders"
+              className="text-neutral-300 underline"
+            >
+              Orders
+            </Link>
+          </div>
         </div>
 
         {error && (
