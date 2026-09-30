@@ -13,7 +13,8 @@ from app.api.v1.wishlist import router as wishlist_router
 from app.api.v1.reservation import (
     router as reservation_router,
 )
-
+from app.api.v1.purchase import router as purchase_router
+from app.api.v1.orders import router as orders_router
 
 app = FastAPI(
     title="Retailigent API",
@@ -42,6 +43,8 @@ app.include_router(pricing_router)
 app.include_router(cart_router)
 app.include_router(wishlist_router)
 app.include_router(reservation_router)
+app.include_router(purchase_router)
+app.include_router(orders_router)
 
 @app.get("/")
 def root():

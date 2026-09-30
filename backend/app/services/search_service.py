@@ -73,8 +73,7 @@ def search_variants(
     # 4. Fetch products
     # ---------------------------------------------------------
     product_response = (
-        supabase_admin
-        .table("products")
+        supabase_admin.table("products")
         .select(
             "id, category_id, name, slug, sku, description, "
             "brand, gender, material, base_price, attributes"
@@ -88,6 +87,32 @@ def search_variants(
         product["id"]: product
         for product in product_response.data
     }
+
+    category_ids = {
+        product["category_id"]
+        for product in products.values()
+        if product.get("category_id")
+    }
+
+    categories = {}
+
+    if category_ids:
+        category_response = (
+            supabase_admin.table("categories")
+            .select("id, name, slug")
+            .in_("id", list(category_ids))
+            .eq("is_active", True)
+            .execute()
+        )
+
+        categories = {
+            category["id"]: category
+            for category in category_response.data
+        }
+
+    for product in products.values():
+        category_id = product.get("category_id")
+        product["category"] = categories.get(category_id)
 
     # ---------------------------------------------------------
     # 5. Fetch variants
