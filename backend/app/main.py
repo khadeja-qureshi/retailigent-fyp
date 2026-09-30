@@ -15,11 +15,56 @@ from app.api.v1.reservation import (
 )
 from app.api.v1.purchase import router as purchase_router
 from app.api.v1.orders import router as orders_router
+from app.api.v1.smart_cart import (
+    router as smart_cart_router,
+)
+
+from app.api.v1.alerts import (
+    router as alerts_router,
+)
+
+
+
+import asyncio
+
+from contextlib import (
+    asynccontextmanager,
+    suppress,
+)
+
+from app.workers.smart_cart_worker import (
+    auto_buy_loop,
+)
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    task = None
+
+    if settings.smart_cart_worker_enabled:
+        task = asyncio.create_task(
+            auto_buy_loop(
+                settings
+                .smart_cart_worker_interval_seconds
+            )
+        )
+
+    try:
+        yield
+
+    finally:
+        if task:
+            task.cancel()
+
+            with suppress(
+                asyncio.CancelledError
+            ):
+                await task
 
 app = FastAPI(
     title="Retailigent API",
     description="Backend API for Retailigent",
     version="1.0.0",
+    lifespan=lifespan,
 )
 
 
@@ -45,6 +90,13 @@ app.include_router(wishlist_router)
 app.include_router(reservation_router)
 app.include_router(purchase_router)
 app.include_router(orders_router)
+app.include_router(
+    smart_cart_router
+)
+
+app.include_router(
+    alerts_router
+)
 
 @app.get("/")
 def root():

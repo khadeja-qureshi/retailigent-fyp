@@ -1,6 +1,9 @@
 from functools import lru_cache
 
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import (
+    BaseSettings,
+    SettingsConfigDict,
+)
 
 
 class Settings(BaseSettings):
@@ -11,6 +14,10 @@ class Settings(BaseSettings):
 
     frontend_url: str = "http://localhost:3000"
     admin_url: str = "http://localhost:3001"
+
+    # Phase 9 - Smart Cart background worker
+    smart_cart_worker_enabled: bool = True
+    smart_cart_worker_interval_seconds: int = 2
 
     model_config = SettingsConfigDict(
         env_file=".env",

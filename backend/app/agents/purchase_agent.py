@@ -3,6 +3,10 @@ from typing import Any
 from app.services.purchase_service import (
     convert_customer_reservation_to_purchase,
     execute_customer_purchase,
+    find_purchase_branch,
+)
+from app.services.smart_cart_service import (
+    get_smart_cart_rule_for_system,
 )
 
 
@@ -44,10 +48,10 @@ class PurchaseAgent:
         smart_cart_rule_id: str | None = None,
     ) -> dict[str, Any]:
         """
-       Complete a direct customer purchase.
+        Complete a direct customer purchase.
 
-       The underlying purchase service executes the purchase
-       atomically through the deterministic purchase RPC.
+        The underlying purchase service executes the purchase
+        atomically through the deterministic purchase RPC.
         """
         return execute_customer_purchase(
             customer_id=customer_id,
@@ -57,6 +61,62 @@ class PurchaseAgent:
             branch_id=branch_id,
             smart_cart_rule_id=smart_cart_rule_id,
         )
+
+    def process_auto_buy_rule(
+        self,
+        rule_id: str,
+    ) -> dict[str, Any]:
+        """
+        Process a triggered Smart Cart auto-buy rule.
+
+        This is an internal system path. The customer client does
+        not directly call execute_mock_purchase for Smart Cart.
+        """
+        rule = get_smart_cart_rule_for_system(
+            rule_id
+        )
+
+        if rule["status"] != "triggered":
+            return {
+                "processed": False,
+                "reason": "rule_not_triggered",
+            }
+
+        if (
+            rule["authorization_mode"]
+            != "auto_buy"
+        ):
+            return {
+                "processed": False,
+                "reason": "not_auto_buy",
+            }
+
+        branch_id = rule.get("branch_id")
+
+        if not branch_id:
+            branch_id = find_purchase_branch(
+                variant_id=rule["variant_id"],
+                quantity=rule["quantity"],
+            )
+
+        idempotency_key = (
+            f"smart-cart:{rule['id']}"
+        )
+
+        result = execute_customer_purchase(
+            customer_id=rule["customer_id"],
+            variant_id=rule["variant_id"],
+            quantity=rule["quantity"],
+            idempotency_key=idempotency_key,
+            branch_id=branch_id,
+            smart_cart_rule_id=rule["id"],
+        )
+
+        return {
+            "processed": True,
+            "rule_id": rule["id"],
+            "result": result,
+        }
 
 
 purchase_agent = PurchaseAgent()

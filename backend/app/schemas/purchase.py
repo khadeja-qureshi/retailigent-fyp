@@ -8,7 +8,6 @@ class MockPurchaseRequest(BaseModel):
     branch_id: Optional[str] = None
     quantity: int = Field(gt=0)
     idempotency_key: str = Field(min_length=1)
-    smart_cart_rule_id: Optional[str] = None
 
 
 class ReservationPurchaseRequest(BaseModel):

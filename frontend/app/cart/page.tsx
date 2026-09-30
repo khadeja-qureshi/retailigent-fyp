@@ -139,6 +139,20 @@ export default function CartPage() {
             </Link>
 
             <Link
+  href="/smart-cart"
+  className="underline"
+>
+  Smart Cart
+</Link>
+
+<Link
+  href="/alerts"
+  className="underline"
+>
+  Alerts
+</Link>
+
+            <Link
               href="/orders"
               className="underline"
             >
@@ -210,6 +224,8 @@ export default function CartPage() {
             onRemove={handleRemove}
           />
         )}
+
+        
 
       </div>
     </main>

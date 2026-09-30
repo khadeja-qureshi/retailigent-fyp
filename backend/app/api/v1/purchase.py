@@ -24,13 +24,13 @@ def create_purchase(
     customer_id: str = Depends(get_current_user_id),
 ):
     result = purchase_agent.purchase_direct(
-        customer_id=customer_id,
-        variant_id=request.variant_id,
-        quantity=request.quantity,
-        idempotency_key=request.idempotency_key,
-        branch_id=request.branch_id,
-        smart_cart_rule_id=request.smart_cart_rule_id,
+    customer_id=customer_id,
+    variant_id=request.variant_id,
+    quantity=request.quantity,
+    idempotency_key=request.idempotency_key,
+    branch_id=request.branch_id,
 )
+    
     return result
 
 
