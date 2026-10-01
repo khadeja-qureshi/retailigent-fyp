@@ -419,8 +419,49 @@ def create_customer_smart_cart_rule(
             ),
         )
 
+    created_rule = response.data[0]
+
+    try:
+        evaluation_response = (
+            supabase_admin
+            .rpc(
+                "evaluate_smart_cart_rule",
+                {
+                    "p_rule_id": created_rule["id"],
+                },
+            )
+            .execute()
+        )
+
+        if evaluation_response.data is None:
+            raise HTTPException(
+                status_code=500,
+                detail=(
+                    "Smart Cart rule was created "
+                    "but could not be evaluated"
+                ),
+            )
+
+    except HTTPException:
+        raise
+
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                "Smart Cart rule was created "
+                "but could not be evaluated: "
+                f"{exc}"
+            ),
+        )
+
+    refreshed_rule = _get_owned_rule(
+        customer_id,
+        created_rule["id"],
+    )
+
     return _enrich_rule(
-        response.data[0]
+        refreshed_rule
     )
 
 
@@ -431,8 +472,9 @@ def pause_customer_smart_cart_rule(
     """
     Pause an active Smart Cart rule.
 
-    Triggered/completed rules are system-owned and may not
-    be changed by this customer-facing service.
+    The expected current status is enforced in the database
+    update itself so a concurrent worker transition cannot
+    be overwritten by this customer action.
     """
     rule = _get_owned_rule(
         customer_id,
@@ -465,15 +507,19 @@ def pause_customer_smart_cart_rule(
             "customer_id",
             customer_id,
         )
+        .eq(
+            "status",
+            "active",
+        )
         .execute()
     )
 
     if not response.data:
         raise HTTPException(
-            status_code=500,
+            status_code=409,
             detail=(
-                "Smart Cart rule could "
-                "not be paused"
+                "Smart Cart rule changed "
+                "before it could be paused"
             ),
         )
 
@@ -488,6 +534,9 @@ def resume_customer_smart_cart_rule(
 ):
     """
     Resume a paused Smart Cart rule.
+
+    The expected current status is enforced in the database
+    update itself.
     """
     rule = _get_owned_rule(
         customer_id,
@@ -520,15 +569,19 @@ def resume_customer_smart_cart_rule(
             "customer_id",
             customer_id,
         )
+        .eq(
+            "status",
+            "paused",
+        )
         .execute()
     )
 
     if not response.data:
         raise HTTPException(
-            status_code=500,
+            status_code=409,
             detail=(
-                "Smart Cart rule could "
-                "not be resumed"
+                "Smart Cart rule changed "
+                "before it could be resumed"
             ),
         )
 
@@ -542,10 +595,11 @@ def cancel_customer_smart_cart_rule(
     rule_id: str,
 ):
     """
-    Cancel an active or paused rule.
+    Cancel an active or paused Smart Cart rule.
 
-    Triggered/completed rules are immutable from the
-    customer's perspective.
+    The expected current status is enforced in the database
+    update itself so a concurrent worker transition cannot
+    be overwritten by this customer action.
     """
     rule = _get_owned_rule(
         customer_id,
@@ -582,15 +636,19 @@ def cancel_customer_smart_cart_rule(
             "customer_id",
             customer_id,
         )
+        .in_(
+            "status",
+            ["active", "paused"],
+        )
         .execute()
     )
 
     if not response.data:
         raise HTTPException(
-            status_code=500,
+            status_code=409,
             detail=(
-                "Smart Cart rule could "
-                "not be cancelled"
+                "Smart Cart rule changed "
+                "before it could be cancelled"
             ),
         )
 
@@ -678,3 +736,25 @@ def list_triggered_auto_buy_rules(
     )
 
     return response.data or []
+
+
+def activate_due_promotions() -> int:
+    """
+    Emit sale-start events for promotions whose start time
+    has arrived but have not yet emitted their event.
+
+    The database function is idempotent and is the
+    authoritative source for promotion activation.
+    """
+    response = (
+        supabase_admin
+        .rpc(
+            "activate_due_promotions"
+        )
+        .execute()
+    )
+
+    if response.data is None:
+        return 0
+
+    return int(response.data)

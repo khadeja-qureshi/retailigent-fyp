@@ -314,8 +314,9 @@ def pause_customer_alert(
     """
     Pause an untriggered active alert.
 
-    Since alerts use an is_active flag rather than a separate
-    paused status, pausing sets is_active=false.
+    The expected current state is enforced in the database
+    update itself so a concurrent worker trigger cannot be
+    overwritten by this customer action.
     """
     alert = _get_owned_alert(
         customer_id,
@@ -340,18 +341,32 @@ def pause_customer_alert(
         .update({
             "is_active": False,
         })
-        .eq("id", alert_id)
+        .eq(
+            "id",
+            alert_id,
+        )
         .eq(
             "customer_id",
             customer_id,
+        )
+        .eq(
+            "is_active",
+            True,
+        )
+        .is_(
+            "triggered_at",
+            "null",
         )
         .execute()
     )
 
     if not response.data:
         raise HTTPException(
-            status_code=500,
-            detail="Alert could not be paused",
+            status_code=409,
+            detail=(
+                "Alert changed before it "
+                "could be paused"
+            ),
         )
 
     return _enrich_alert(
@@ -366,7 +381,9 @@ def resume_customer_alert(
     """
     Resume an untriggered paused alert.
 
-    Triggered alerts are one-shot and must not be reactivated.
+    The expected current state is enforced in the database
+    update itself so a concurrent worker trigger cannot be
+    overwritten by this customer action.
     """
     alert = _get_owned_alert(
         customer_id,
@@ -391,18 +408,32 @@ def resume_customer_alert(
         .update({
             "is_active": True,
         })
-        .eq("id", alert_id)
+        .eq(
+            "id",
+            alert_id,
+        )
         .eq(
             "customer_id",
             customer_id,
+        )
+        .eq(
+            "is_active",
+            False,
+        )
+        .is_(
+            "triggered_at",
+            "null",
         )
         .execute()
     )
 
     if not response.data:
         raise HTTPException(
-            status_code=500,
-            detail="Alert could not be resumed",
+            status_code=409,
+            detail=(
+                "Alert changed before it "
+                "could be resumed"
+            ),
         )
 
     return _enrich_alert(
@@ -414,6 +445,12 @@ def cancel_customer_alert(
     customer_id: str,
     alert_id: str,
 ):
+    """
+    Cancel an untriggered alert.
+
+    Triggered alerts are retained as history and cannot be
+    deleted by the customer.
+    """
     alert = _get_owned_alert(
         customer_id,
         alert_id,
@@ -432,13 +469,29 @@ def cancel_customer_alert(
         supabase_admin
         .table("alerts")
         .delete()
-        .eq("id", alert_id)
+        .eq(
+            "id",
+            alert_id,
+        )
         .eq(
             "customer_id",
             customer_id,
         )
+        .is_(
+            "triggered_at",
+            "null",
+        )
         .execute()
     )
+
+    if not response.data:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Alert changed before it "
+                "could be cancelled"
+            ),
+        )
 
     return {
         "deleted": True,

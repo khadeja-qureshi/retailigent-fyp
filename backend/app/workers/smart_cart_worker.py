@@ -3,6 +3,7 @@ import logging
 
 from app.agents.purchase_agent import purchase_agent
 from app.services.smart_cart_service import (
+    activate_due_promotions,
     list_triggered_auto_buy_rules,
 )
 
@@ -66,6 +67,25 @@ async def auto_buy_loop(
 
     while True:
         try:
+            try:
+                activated_count = await asyncio.to_thread(
+                    activate_due_promotions
+                )
+
+                if activated_count:
+                    logger.info(
+                        "Activated %s due promotion event(s)",
+                        activated_count,
+                    )
+
+            except Exception:
+                # Promotion activation must not prevent
+                # already-triggered Auto Buy rules from
+                # being processed.
+                logger.exception(
+                    "Failed to activate due promotions"
+                )
+
             await asyncio.to_thread(
                 process_pending_auto_buys
             )
