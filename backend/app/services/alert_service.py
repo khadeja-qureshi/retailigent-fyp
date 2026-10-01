@@ -414,15 +414,19 @@ def cancel_customer_alert(
     customer_id: str,
     alert_id: str,
 ):
-    """
-    Delete/cancel an alert owned by the customer.
-
-    The backend checks ownership before deleting.
-    """
     alert = _get_owned_alert(
         customer_id,
         alert_id,
     )
+
+    if alert["triggered_at"] is not None:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "This alert has already triggered "
+                "and is kept as alert history."
+            ),
+        )
 
     response = (
         supabase_admin
@@ -438,5 +442,5 @@ def cancel_customer_alert(
 
     return {
         "deleted": True,
-        "alert_id": alert["id"],
+        "alert_id": alert_id,
     }

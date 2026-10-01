@@ -38,6 +38,17 @@ function alertLabel(
 }
 
 
+function money(
+  value?: number | null
+) {
+  if (value == null) {
+    return "—";
+  }
+
+  return `Rs. ${value.toLocaleString()}`;
+}
+
+
 export default function AlertBlock({
   alert,
   busy = false,
@@ -49,10 +60,12 @@ export default function AlertBlock({
     Boolean(alert.triggered_at);
 
   const active =
-    alert.is_active && !triggered;
+    alert.is_active &&
+    !triggered;
 
   const paused =
-    !alert.is_active && !triggered;
+    !alert.is_active &&
+    !triggered;
 
 
   return (
@@ -78,11 +91,13 @@ export default function AlertBlock({
 
 
         <span className="rounded-full border border-neutral-700 px-3 py-1 text-xs">
+
           {triggered
             ? "Triggered"
             : active
               ? "Watching"
               : "Paused"}
+
         </span>
 
       </div>
@@ -99,24 +114,26 @@ export default function AlertBlock({
           </strong>
         </p>
 
+
         {alert.target_price != null && (
           <p>
             Target:{" "}
             <strong>
-              Rs.{" "}
-              {alert.target_price
-                .toLocaleString()}
+              {money(
+                alert.target_price
+              )}
             </strong>
           </p>
         )}
+
 
         {alert.effective_price != null && (
           <p>
             Current price:{" "}
             <strong>
-              Rs.{" "}
-              {alert.effective_price
-                .toLocaleString()}
+              {money(
+                alert.effective_price
+              )}
             </strong>
           </p>
         )}
@@ -126,48 +143,74 @@ export default function AlertBlock({
 
       {triggered && (
         <div className="mt-5 rounded-xl border border-green-900 bg-green-950/30 p-4 text-green-300">
+
           Alert condition matched.
+
         </div>
       )}
 
 
-      <div className="mt-6 flex gap-3">
+      {paused && (
+        <div className="mt-5 rounded-xl border border-neutral-700 bg-neutral-950 p-4 text-neutral-400">
+
+          Alert monitoring is paused.
+
+        </div>
+      )}
+
+
+      <div className="mt-6 flex flex-wrap gap-3">
 
         {active && (
           <button
+            type="button"
             disabled={busy}
-            onClick={() =>
-              onPause(alert.id)
-            }
-            className="rounded-lg border border-neutral-700 px-4 py-2"
+            onClick={() => {
+              onPause(
+                alert.id
+              );
+            }}
+            className="rounded-lg border border-neutral-700 px-4 py-2 hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            Pause
+            {busy
+              ? "Working..."
+              : "Pause"}
           </button>
         )}
 
 
         {paused && (
           <button
+            type="button"
             disabled={busy}
-            onClick={() =>
-              onResume(alert.id)
-            }
-            className="rounded-lg border border-neutral-700 px-4 py-2"
+            onClick={() => {
+              onResume(
+                alert.id
+              );
+            }}
+            className="rounded-lg border border-neutral-700 px-4 py-2 hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            Resume
+            {busy
+              ? "Working..."
+              : "Resume"}
           </button>
         )}
 
 
         {!triggered && (
           <button
+            type="button"
             disabled={busy}
-            onClick={() =>
-              onDelete(alert.id)
-            }
-            className="rounded-lg border border-red-900 px-4 py-2 text-red-300"
+            onClick={() => {
+              onDelete(
+                alert.id
+              );
+            }}
+            className="rounded-lg border border-red-900 px-4 py-2 text-red-300 hover:bg-red-950/30 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            Delete
+            {busy
+              ? "Working..."
+              : "Delete"}
           </button>
         )}
 
