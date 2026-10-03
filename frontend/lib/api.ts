@@ -553,3 +553,58 @@ export function deleteAlert(
     }
   );
 }
+
+// ---------------------------------------------------------------------------
+// Notifications (Phase 10)
+// ---------------------------------------------------------------------------
+
+export interface AppNotification {
+  id: string;
+  type: string;
+  title: string;
+  message: string;
+  metadata: Record<string, unknown>;
+  read_at: string | null;
+  created_at: string;
+}
+
+export interface NotificationListResponse {
+  type: "notification_list";
+  notifications: AppNotification[];
+  unread_count: number;
+}
+
+
+export function getNotifications(
+  unreadOnly = false
+) {
+  return apiFetch<NotificationListResponse>(
+    `/api/v1/notifications?unread_only=${unreadOnly}`
+  );
+}
+
+
+export function getUnreadNotificationCount() {
+  return apiFetch<{ unread_count: number }>(
+    "/api/v1/notifications/unread-count"
+  );
+}
+
+
+export function markNotificationsRead(
+  notificationIds?: string[]
+) {
+  return apiFetch<{
+    updated: number;
+    unread_count: number;
+  }>(
+    "/api/v1/notifications/read",
+    {
+      method: "POST",
+      body: JSON.stringify({
+        notification_ids:
+          notificationIds ?? null,
+      }),
+    }
+  );
+}
