@@ -19,6 +19,22 @@ class Settings(BaseSettings):
     smart_cart_worker_enabled: bool = True
     smart_cart_worker_interval_seconds: int = 2
 
+    # Phase 10 - Notifications
+    notification_worker_enabled: bool = True
+    notification_worker_interval_seconds: int = 5
+    notification_batch_size: int = 20
+    notification_max_attempts: int = 5
+    notification_backoff_seconds: int = 30
+
+    # email_backend: "log" (dev, logs the email) or "smtp"
+    email_backend: str = "log"
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_username: str = ""
+    smtp_password: str = ""
+    smtp_use_tls: bool = True
+    email_from: str = "Retailigent <no-reply@retailigent.local>"
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

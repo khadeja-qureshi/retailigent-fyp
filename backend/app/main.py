@@ -22,6 +22,9 @@ from app.api.v1.smart_cart import (
 from app.api.v1.alerts import (
     router as alerts_router,
 )
+from app.api.v1.notifications import (
+    router as notifications_router,
+)
 
 
 
@@ -35,16 +38,31 @@ from contextlib import (
 from app.workers.smart_cart_worker import (
     auto_buy_loop,
 )
+from app.workers.notification_worker import (
+    notification_loop,
+)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    task = None
+    tasks = []
 
     if settings.smart_cart_worker_enabled:
-        task = asyncio.create_task(
-            auto_buy_loop(
-                settings
-                .smart_cart_worker_interval_seconds
+        tasks.append(
+            asyncio.create_task(
+                auto_buy_loop(
+                    settings
+                    .smart_cart_worker_interval_seconds
+                )
+            )
+        )
+
+    if settings.notification_worker_enabled:
+        tasks.append(
+            asyncio.create_task(
+                notification_loop(
+                    settings
+                    .notification_worker_interval_seconds
+                )
             )
         )
 
@@ -52,9 +70,10 @@ async def lifespan(app: FastAPI):
         yield
 
     finally:
-        if task:
+        for task in tasks:
             task.cancel()
 
+        for task in tasks:
             with suppress(
                 asyncio.CancelledError
             ):
@@ -96,6 +115,10 @@ app.include_router(
 
 app.include_router(
     alerts_router
+)
+
+app.include_router(
+    notifications_router
 )
 
 @app.get("/")
