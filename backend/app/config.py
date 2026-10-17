@@ -25,6 +25,7 @@ class Settings(BaseSettings):
     notification_batch_size: int = 20
     notification_max_attempts: int = 5
     notification_backoff_seconds: int = 30
+    notification_stale_processing_seconds: int = 300
 
     # email_backend: "log" (dev, logs the email) or "smtp"
     email_backend: str = "log"

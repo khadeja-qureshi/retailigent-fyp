@@ -1,3 +1,4 @@
+
 import os
 from decimal import Decimal
 
@@ -34,9 +35,7 @@ def require_test_environment():
     )
 
 
-def find_test_branch(
-    min_available: int = 1,
-):
+def find_test_branch(min_available: int = 1):
     response = (
         supabase_admin
         .table("branch_inventory")
@@ -72,24 +71,15 @@ def find_test_branch(
 
     active_ids = {
         row["id"]
-        for row in (
-            branch_response.data or []
-        )
+        for row in (branch_response.data or [])
     }
 
     candidates = [
         row
         for row in inventory_rows
         if (
-            row["branch_id"]
-            in active_ids
-            and
-            int(
-                row[
-                    "available_quantity"
-                ]
-            )
-            >= min_available
+            row["branch_id"] in active_ids
+            and int(row["available_quantity"]) >= min_available
         )
     ]
 
@@ -100,15 +90,11 @@ def find_test_branch(
 
     return max(
         candidates,
-        key=lambda row: int(
-            row["available_quantity"]
-        ),
+        key=lambda row: int(row["available_quantity"]),
     )
 
 
-def inventory_snapshot(
-    branch_id: str,
-):
+def inventory_snapshot(branch_id: str):
     response = (
         supabase_admin
         .table("branch_inventory")
@@ -119,14 +105,8 @@ def inventory_snapshot(
             "reserved_quantity, "
             "available_quantity"
         )
-        .eq(
-            "variant_id",
-            VARIANT_ID,
-        )
-        .eq(
-            "branch_id",
-            branch_id,
-        )
+        .eq("variant_id", VARIANT_ID)
+        .eq("branch_id", branch_id)
         .single()
         .execute()
     )
@@ -153,8 +133,7 @@ def get_effective_price():
         .rpc(
             "get_effective_variant_price",
             {
-                "p_variant_id":
-                    VARIANT_ID,
+                "p_variant_id": VARIANT_ID,
             },
         )
         .execute()
@@ -162,14 +141,10 @@ def get_effective_price():
 
     assert response.data is not None
 
-    return Decimal(
-        str(response.data)
-    )
+    return Decimal(str(response.data))
 
 
-def set_variant_price(
-    price,
-):
+def set_variant_price(price):
     (
         supabase_admin
         .table("product_variants")
@@ -181,9 +156,7 @@ def set_variant_price(
     )
 
 
-def get_rule(
-    rule_id: str,
-):
+def get_rule(rule_id: str):
     response = (
         supabase_admin
         .table("smart_cart_rules")
@@ -196,9 +169,7 @@ def get_rule(
     return response.data
 
 
-def get_alert(
-    alert_id: str,
-):
+def get_alert(alert_id: str):
     response = (
         supabase_admin
         .table("alerts")
@@ -211,9 +182,7 @@ def get_alert(
     return response.data
 
 
-def delete_test_rule(
-    rule_id: str,
-):
+def delete_test_rule(rule_id: str):
     try:
         (
             supabase_admin
@@ -232,458 +201,245 @@ def delete_test_rule(
 def test_smart_cart_pause_resume_cancel():
     require_test_environment()
 
-    branch = find_test_branch(
-        min_available=1
-    )
+    branch = find_test_branch(min_available=1)
 
     rule_id = None
 
     try:
-        rule = (
-            create_customer_smart_cart_rule(
-                customer_id=CUSTOMER_ID,
-                variant_id=VARIANT_ID,
-                branch_id=(
-                    branch["branch_id"]
-                ),
-                quantity=1,
-                target_price=Decimal(
-                    "1.00"
-                ),
-                authorization_mode=(
-                    "notify_only"
-                ),
-            )
+        rule = create_customer_smart_cart_rule(
+            customer_id=CUSTOMER_ID,
+            variant_id=VARIANT_ID,
+            branch_id=branch["branch_id"],
+            quantity=1,
+            target_price=Decimal("1.00"),
+            authorization_mode="notify_only",
         )
 
         rule_id = rule["id"]
 
-        assert (
-            rule["status"]
-            == "active"
+        assert rule["status"] == "active"
+
+        paused = pause_customer_smart_cart_rule(
+            customer_id=CUSTOMER_ID,
+            rule_id=rule_id,
         )
 
-        paused = (
-            pause_customer_smart_cart_rule(
-                customer_id=CUSTOMER_ID,
-                rule_id=rule_id,
-            )
+        assert paused["status"] == "paused"
+
+        resumed = resume_customer_smart_cart_rule(
+            customer_id=CUSTOMER_ID,
+            rule_id=rule_id,
         )
 
-        assert (
-            paused["status"]
-            == "paused"
+        assert resumed["status"] == "active"
+
+        cancelled = cancel_customer_smart_cart_rule(
+            customer_id=CUSTOMER_ID,
+            rule_id=rule_id,
         )
 
-        resumed = (
-            resume_customer_smart_cart_rule(
-                customer_id=CUSTOMER_ID,
-                rule_id=rule_id,
-            )
-        )
-
-        assert (
-            resumed["status"]
-            == "active"
-        )
-
-        cancelled = (
-            cancel_customer_smart_cart_rule(
-                customer_id=CUSTOMER_ID,
-                rule_id=rule_id,
-            )
-        )
-
-        assert (
-            cancelled["status"]
-            == "cancelled"
-        )
+        assert cancelled["status"] == "cancelled"
 
     finally:
         if rule_id:
-            delete_test_rule(
-                rule_id
-            )
+            delete_test_rule(rule_id)
 
 
 def test_auto_buy_price_event_creates_one_order():
     require_test_environment()
 
-    branch = find_test_branch(
-        min_available=1
-    )
-
+    branch = find_test_branch(min_available=1)
     branch_id = branch["branch_id"]
 
-    inventory_before = (
-        inventory_snapshot(
-            branch_id
-        )
-    )
+    inventory_before = inventory_snapshot(branch_id)
+    original_raw_price = get_raw_variant_price()
+    original_effective_price = get_effective_price()
 
-    original_raw_price = (
-        get_raw_variant_price()
-    )
-
-    original_effective_price = (
-        get_effective_price()
-    )
-
-    assert (
-        original_effective_price
-        > Decimal("10")
-    ), (
+    assert original_effective_price > Decimal("10"), (
         "Test variant effective price "
         "must be greater than Rs 10."
     )
 
     target_price = (
-        original_effective_price
-        * Decimal("0.80")
-    ).quantize(
-        Decimal("0.01")
-    )
+        original_effective_price * Decimal("0.80")
+    ).quantize(Decimal("0.01"))
 
     trigger_raw_price = max(
         Decimal("1.00"),
-        target_price
-        * Decimal("0.50"),
-    ).quantize(
-        Decimal("0.01")
-    )
+        target_price * Decimal("0.50"),
+    ).quantize(Decimal("0.01"))
 
     rule_id = None
 
     try:
-        rule = (
-            create_customer_smart_cart_rule(
-                customer_id=CUSTOMER_ID,
-                variant_id=VARIANT_ID,
-                branch_id=branch_id,
-                quantity=1,
-                target_price=(
-                    target_price
-                ),
-                authorization_mode=(
-                    "auto_buy"
-                ),
-            )
+        rule = create_customer_smart_cart_rule(
+            customer_id=CUSTOMER_ID,
+            variant_id=VARIANT_ID,
+            branch_id=branch_id,
+            quantity=1,
+            target_price=target_price,
+            authorization_mode="auto_buy",
         )
 
         rule_id = rule["id"]
 
-        assert (
-            rule["status"]
-            == "active"
-        )
+        assert rule["status"] == "active"
 
         # This DB update emits a price_changed
         # retail event automatically.
-        set_variant_price(
-            float(trigger_raw_price)
-        )
+        set_variant_price(float(trigger_raw_price))
 
-        rule_after_event = (
-            get_smart_cart_rule_for_system(
-                rule_id
-            )
-        )
+        rule_after_event = get_smart_cart_rule_for_system(rule_id)
 
         # If the FastAPI background worker
         # is already running in another
         # process, the rule may already be
         # completed.
-        assert (
-            rule_after_event["status"]
-            in {
-                "triggered",
-                "completed",
-            }
-        )
+        assert rule_after_event["status"] in {
+            "triggered",
+            "completed",
+        }
 
-        if (
-            rule_after_event["status"]
-            == "triggered"
-        ):
-            result = (
-                purchase_agent
-                .process_auto_buy_rule(
-                    rule_id
-                )
-            )
+        if rule_after_event["status"] == "triggered":
+            result = purchase_agent.process_auto_buy_rule(rule_id)
 
-            assert (
-                result["processed"]
-                is True
-            )
+            assert result["processed"] is True
 
-        final_rule = get_rule(
-            rule_id
-        )
+        final_rule = get_rule(rule_id)
 
-        assert (
-            final_rule["status"]
-            == "completed"
-        )
-
-        assert (
-            final_rule[
-                "triggered_at"
-            ]
-            is not None
-        )
+        assert final_rule["status"] == "completed"
+        assert final_rule["triggered_at"] is not None
 
         attempts_response = (
             supabase_admin
-            .table(
-                "purchase_attempts"
-            )
+            .table("purchase_attempts")
             .select(
                 "id, status, "
                 "idempotency_key, "
                 "order_id, "
                 "smart_cart_rule_id"
             )
-            .eq(
-                "smart_cart_rule_id",
-                rule_id,
-            )
+            .eq("smart_cart_rule_id", rule_id)
             .execute()
         )
 
-        attempts = (
-            attempts_response.data
-            or []
-        )
+        attempts = attempts_response.data or []
 
         assert len(attempts) == 1
 
         attempt = attempts[0]
 
+        assert attempt["status"] == "completed"
+        assert attempt["order_id"] is not None
+        assert attempt["idempotency_key"] == f"smart-cart:{rule_id}"
+
+        inventory_after = inventory_snapshot(branch_id)
+
         assert (
-            attempt["status"]
-            == "completed"
+            inventory_after["on_hand_quantity"]
+            == inventory_before["on_hand_quantity"] - 1
         )
 
         assert (
-            attempt["order_id"]
-            is not None
+            inventory_after["reserved_quantity"]
+            == inventory_before["reserved_quantity"]
         )
 
         assert (
-            attempt[
-                "idempotency_key"
-            ]
-            ==
-            f"smart-cart:{rule_id}"
-        )
-
-        inventory_after = (
-            inventory_snapshot(
-                branch_id
-            )
-        )
-
-        assert (
-            inventory_after[
-                "on_hand_quantity"
-            ]
-            ==
-            inventory_before[
-                "on_hand_quantity"
-            ] - 1
-        )
-
-        assert (
-            inventory_after[
-                "reserved_quantity"
-            ]
-            ==
-            inventory_before[
-                "reserved_quantity"
-            ]
-        )
-
-        assert (
-            inventory_after[
-                "available_quantity"
-            ]
-            ==
-            inventory_before[
-                "available_quantity"
-            ] - 1
+            inventory_after["available_quantity"]
+            == inventory_before["available_quantity"] - 1
         )
 
         # Running the same completed rule
         # again must NOT make another order.
-        second_result = (
-            purchase_agent
-            .process_auto_buy_rule(
-                rule_id
-            )
-        )
+        second_result = purchase_agent.process_auto_buy_rule(rule_id)
 
-        assert (
-            second_result[
-                "processed"
-            ]
-            is False
-        )
+        assert second_result["processed"] is False
 
         attempts_again = (
             supabase_admin
-            .table(
-                "purchase_attempts"
-            )
+            .table("purchase_attempts")
             .select("id")
-            .eq(
-                "smart_cart_rule_id",
-                rule_id,
-            )
+            .eq("smart_cart_rule_id", rule_id)
             .execute()
         )
 
-        assert len(
-            attempts_again.data
-            or []
-        ) == 1
+        assert len(attempts_again.data or []) == 1
 
     finally:
-        set_variant_price(
-            original_raw_price
+        # Restore the original product price.
+        set_variant_price(original_raw_price)
+
+        # A successful auto-buy performs a real mock purchase,
+        # which decreases physical stock. Restore the inventory
+        # fixture so repeated pytest runs remain independent.
+        restore_inventory_to_snapshot(
+            branch_id=branch_id,
+            before=inventory_before,
         )
 
 
 def test_price_drop_alert_triggers_once():
     require_test_environment()
 
-    original_raw_price = (
-        get_raw_variant_price()
-    )
+    original_raw_price = get_raw_variant_price()
+    effective_price = get_effective_price()
 
-    effective_price = (
-        get_effective_price()
-    )
-
-    assert (
-        effective_price
-        > Decimal("10")
-    )
+    assert effective_price > Decimal("10")
 
     target_price = (
-        effective_price
-        * Decimal("0.80")
-    ).quantize(
-        Decimal("0.01")
-    )
+        effective_price * Decimal("0.80")
+    ).quantize(Decimal("0.01"))
 
     trigger_price = max(
         Decimal("1.00"),
-        target_price
-        * Decimal("0.50"),
-    ).quantize(
-        Decimal("0.01")
-    )
+        target_price * Decimal("0.50"),
+    ).quantize(Decimal("0.01"))
 
     alert_id = None
 
     try:
-        alert = (
-            create_customer_alert(
-                customer_id=CUSTOMER_ID,
-                variant_id=VARIANT_ID,
-                alert_type="price_drop",
-                target_price=(
-                    target_price
-                ),
-            )
+        alert = create_customer_alert(
+            customer_id=CUSTOMER_ID,
+            variant_id=VARIANT_ID,
+            alert_type="price_drop",
+            target_price=target_price,
         )
 
         alert_id = alert["id"]
 
-        assert (
-            alert["is_active"]
-            is True
-        )
+        assert alert["is_active"] is True
+        assert alert["triggered_at"] is None
 
-        assert (
-            alert["triggered_at"]
-            is None
-        )
+        set_variant_price(float(trigger_price))
 
-        set_variant_price(
-            float(trigger_price)
-        )
+        triggered = get_alert(alert_id)
 
-        triggered = get_alert(
-            alert_id
-        )
+        assert triggered["is_active"] is False
+        assert triggered["triggered_at"] is not None
 
-        assert (
-            triggered["is_active"]
-            is False
-        )
-
-        assert (
-            triggered[
-                "triggered_at"
-            ]
-            is not None
-        )
-
-        first_triggered_at = (
-            triggered[
-                "triggered_at"
-            ]
-        )
+        first_triggered_at = triggered["triggered_at"]
 
         # Generate another price event.
         second_price = max(
             Decimal("0.50"),
-            trigger_price
-            - Decimal("0.50"),
+            trigger_price - Decimal("0.50"),
         )
 
-        if (
-            second_price
-            == trigger_price
-        ):
-            second_price = (
-                trigger_price
-                + Decimal("0.50")
-            )
+        if second_price == trigger_price:
+            second_price = trigger_price + Decimal("0.50")
 
-        set_variant_price(
-            float(second_price)
-        )
+        set_variant_price(float(second_price))
 
-        after_second_event = (
-            get_alert(
-                alert_id
-            )
-        )
+        after_second_event = get_alert(alert_id)
 
         # One-shot behavior:
         # it must remain triggered once.
-        assert (
-            after_second_event[
-                "is_active"
-            ]
-            is False
-        )
-
-        assert (
-            after_second_event[
-                "triggered_at"
-            ]
-            ==
-            first_triggered_at
-        )
+        assert after_second_event["is_active"] is False
+        assert after_second_event["triggered_at"] == first_triggered_at
 
     finally:
-        set_variant_price(
-            original_raw_price
-        )
+        set_variant_price(original_raw_price)
 
         if alert_id:
             try:
@@ -691,10 +447,7 @@ def test_price_drop_alert_triggers_once():
                     supabase_admin
                     .table("alerts")
                     .delete()
-                    .eq(
-                        "id",
-                        alert_id,
-                    )
+                    .eq("id", alert_id)
                     .execute()
                 )
             except Exception:
@@ -706,66 +459,90 @@ def test_alert_pause_resume_delete():
 
     alert_id = None
 
-    alert = (
-        create_customer_alert(
-            customer_id=CUSTOMER_ID,
-            variant_id=VARIANT_ID,
-            alert_type="restock",
-        )
+    alert = create_customer_alert(
+        customer_id=CUSTOMER_ID,
+        variant_id=VARIANT_ID,
+        alert_type="restock",
     )
 
     alert_id = alert["id"]
 
-    assert (
-        alert["is_active"]
-        is True
+    assert alert["is_active"] is True
+
+    paused = pause_customer_alert(
+        customer_id=CUSTOMER_ID,
+        alert_id=alert_id,
     )
 
-    paused = (
-        pause_customer_alert(
-            customer_id=CUSTOMER_ID,
-            alert_id=alert_id,
-        )
+    assert paused["is_active"] is False
+
+    resumed = resume_customer_alert(
+        customer_id=CUSTOMER_ID,
+        alert_id=alert_id,
     )
 
-    assert (
-        paused["is_active"]
-        is False
+    assert resumed["is_active"] is True
+
+    deleted = cancel_customer_alert(
+        customer_id=CUSTOMER_ID,
+        alert_id=alert_id,
     )
 
-    resumed = (
-        resume_customer_alert(
-            customer_id=CUSTOMER_ID,
-            alert_id=alert_id,
-        )
-    )
-
-    assert (
-        resumed["is_active"]
-        is True
-    )
-
-    deleted = (
-        cancel_customer_alert(
-            customer_id=CUSTOMER_ID,
-            alert_id=alert_id,
-        )
-    )
-
-    assert (
-        deleted["deleted"]
-        is True
-    )
+    assert deleted["deleted"] is True
 
     response = (
         supabase_admin
         .table("alerts")
         .select("id")
-        .eq(
-            "id",
-            alert_id,
-        )
+        .eq("id", alert_id)
         .execute()
     )
 
     assert not response.data
+
+
+def restore_inventory_to_snapshot(
+    branch_id: str,
+    before: dict,
+):
+    current = inventory_snapshot(branch_id)
+
+    before_on_hand = int(before["on_hand_quantity"])
+    current_on_hand = int(current["on_hand_quantity"])
+
+    on_hand_delta = before_on_hand - current_on_hand
+
+    if on_hand_delta == 0:
+        return
+
+    (
+        supabase_admin
+        .rpc(
+            "adjust_inventory",
+            {
+                "p_variant_id": VARIANT_ID,
+                "p_branch_id": branch_id,
+                "p_on_hand_delta": on_hand_delta,
+                "p_reserved_delta": 0,
+                "p_movement_type": "adjustment",
+                "p_reference_type": "pytest_cleanup",
+                "p_reference_id": None,
+                "p_reason": (
+                    "Restore inventory after "
+                    "Smart Cart auto-buy test"
+                ),
+                "p_metadata": {
+                    "source": "test_smart_cart_alerts",
+                    "purpose": "test_fixture_cleanup",
+                },
+            },
+        )
+        .execute()
+    )
+
+    restored = inventory_snapshot(branch_id)
+
+    assert (
+        int(restored["on_hand_quantity"])
+        == before_on_hand
+    )

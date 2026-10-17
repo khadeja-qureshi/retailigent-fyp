@@ -112,6 +112,8 @@ def claim_deliveries() -> list[dict]:
             "p_limit": settings.notification_batch_size,
             "p_max_attempts": settings.notification_max_attempts,
             "p_base_backoff_seconds": settings.notification_backoff_seconds,
+            "p_stale_processing_seconds":
+                settings.notification_stale_processing_seconds,
         },
     ).execute()
 

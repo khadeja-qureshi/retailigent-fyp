@@ -179,38 +179,377 @@ def test_notification_end_to_end():
     )
 
     try:
+        # ---------------------------------------------------------------
+        # 1. Notification was created and appears as unread
+        # ---------------------------------------------------------------
         assert count_unread(CUSTOMER_ID) == unread_before + 1
 
         listed = list_notifications(CUSTOMER_ID)
+
         assert any(
-            n["id"] == notification_id for n in listed["notifications"]
+            notification["id"] == notification_id
+            for notification in listed["notifications"]
         )
 
-        # in_app delivery is queued, then drained by the worker
-        notification_worker.process_pending_deliveries()
-
+        # ---------------------------------------------------------------
+        # 2. Confirm its in-app delivery was queued
+        # ---------------------------------------------------------------
         delivery = (
             supabase_admin
             .table("notification_deliveries")
-            .select("status, attempts")
-            .eq("notification_id", notification_id)
-            .eq("channel", "in_app")
+            .select(
+                "id, status, attempts"
+            )
+            .eq(
+                "notification_id",
+                notification_id,
+            )
+            .eq(
+                "channel",
+                "in_app",
+            )
             .single()
             .execute()
             .data
         )
+
+        assert delivery["status"] == "pending"
+        assert delivery["attempts"] == 0
+
+        # ---------------------------------------------------------------
+        # 3. Drain worker batches until THIS delivery is processed.
+        #
+        # The database may already contain older pending deliveries.
+        # claim_notification_deliveries() intentionally processes the
+        # oldest rows first, so one worker call is not guaranteed to
+        # reach the notification created by this test.
+        # ---------------------------------------------------------------
+        for _ in range(10):
+            notification_worker.process_pending_deliveries()
+
+            delivery = (
+                supabase_admin
+                .table("notification_deliveries")
+                .select(
+                    "status, attempts"
+                )
+                .eq(
+                    "notification_id",
+                    notification_id,
+                )
+                .eq(
+                    "channel",
+                    "in_app",
+                )
+                .single()
+                .execute()
+                .data
+            )
+
+            if delivery["status"] == "sent":
+                break
+
         assert delivery["status"] == "sent"
         assert delivery["attempts"] == 1
 
-        result = mark_read(CUSTOMER_ID, [notification_id])
+        # ---------------------------------------------------------------
+        # 4. Mark it read
+        # ---------------------------------------------------------------
+        result = mark_read(
+            CUSTOMER_ID,
+            [notification_id],
+        )
+
         assert result["updated"] == 1
         assert count_unread(CUSTOMER_ID) == unread_before
 
     finally:
+        # notification_deliveries rows are deleted automatically because
+        # they reference notifications(id) ON DELETE CASCADE.
         (
             supabase_admin
             .table("notifications")
             .delete()
-            .eq("id", notification_id)
+            .eq(
+                "id",
+                notification_id,
+            )
             .execute()
+        )
+
+def _get_email_preference_state():
+    response = (
+        supabase_admin
+        .table("customer_preferences")
+        .select("allow_email_notifications")
+        .eq("customer_id", CUSTOMER_ID)
+        .limit(1)
+        .execute()
+    )
+
+    if not response.data:
+        return False, False
+
+    return (
+        True,
+        bool(
+            response.data[0]["allow_email_notifications"]
+        ),
+    )
+
+
+def _set_email_preference(enabled: bool):
+    response = (
+        supabase_admin
+        .table("customer_preferences")
+        .select("customer_id")
+        .eq("customer_id", CUSTOMER_ID)
+        .limit(1)
+        .execute()
+    )
+
+    if response.data:
+        (
+            supabase_admin
+            .table("customer_preferences")
+            .update(
+                {
+                    "allow_email_notifications": enabled,
+                }
+            )
+            .eq("customer_id", CUSTOMER_ID)
+            .execute()
+        )
+    else:
+        (
+            supabase_admin
+            .table("customer_preferences")
+            .insert(
+                {
+                    "customer_id": CUSTOMER_ID,
+                    "allow_email_notifications": enabled,
+                }
+            )
+            .execute()
+        )
+
+
+def _restore_email_preference(
+    existed: bool,
+    original_value: bool,
+):
+    if existed:
+        (
+            supabase_admin
+            .table("customer_preferences")
+            .update(
+                {
+                    "allow_email_notifications":
+                        original_value,
+                }
+            )
+            .eq("customer_id", CUSTOMER_ID)
+            .execute()
+        )
+    else:
+        (
+            supabase_admin
+            .table("customer_preferences")
+            .delete()
+            .eq("customer_id", CUSTOMER_ID)
+            .execute()
+        )
+
+
+def test_commerce_notification_queues_email_when_opted_in():
+    assert CUSTOMER_ID, (
+        "TEST_CUSTOMER_ID is missing from backend/.env"
+    )
+
+    existed, original_value = (
+        _get_email_preference_state()
+    )
+
+    notification_id = None
+
+    try:
+        _set_email_preference(True)
+
+        notification_id = (
+            supabase_admin
+            .rpc(
+                "create_notification",
+                {
+                    "p_customer_id": CUSTOMER_ID,
+                    "p_type": "price_drop",
+                    "p_title": "Phase 10 email queue test",
+                    "p_message":
+                        "Opted-in customer should get email queue row",
+                    "p_metadata": {
+                        "test": True,
+                    },
+
+                    # Important:
+                    # We deliberately keep this False.
+                    # The migration should auto-queue email
+                    # because price_drop is a commerce event
+                    # and the customer opted in.
+                    "p_email": False,
+                },
+            )
+            .execute()
+            .data
+        )
+
+        response = (
+            supabase_admin
+            .table("notification_deliveries")
+            .select("channel, status, attempts")
+            .eq(
+                "notification_id",
+                notification_id,
+            )
+            .execute()
+        )
+
+        deliveries = response.data or []
+
+        channels = {
+            row["channel"]
+            for row in deliveries
+        }
+
+        assert channels == {
+            "in_app",
+            "email",
+        }
+
+        by_channel = {
+            row["channel"]: row
+            for row in deliveries
+        }
+
+        assert (
+            by_channel["in_app"]["status"]
+            == "pending"
+        )
+
+        assert (
+            by_channel["email"]["status"]
+            == "pending"
+        )
+
+        assert (
+            by_channel["in_app"]["attempts"]
+            == 0
+        )
+
+        assert (
+            by_channel["email"]["attempts"]
+            == 0
+        )
+
+    finally:
+        if notification_id:
+            (
+                supabase_admin
+                .table("notifications")
+                .delete()
+                .eq(
+                    "id",
+                    notification_id,
+                )
+                .execute()
+            )
+
+        _restore_email_preference(
+            existed,
+            original_value,
+        )
+
+
+def test_commerce_notification_respects_email_opt_out():
+    assert CUSTOMER_ID, (
+        "TEST_CUSTOMER_ID is missing from backend/.env"
+    )
+
+    existed, original_value = (
+        _get_email_preference_state()
+    )
+
+    notification_id = None
+
+    try:
+        _set_email_preference(False)
+
+        notification_id = (
+            supabase_admin
+            .rpc(
+                "create_notification",
+                {
+                    "p_customer_id": CUSTOMER_ID,
+                    "p_type": "smart_cart_match",
+                    "p_title": "Phase 10 opt-out test",
+                    "p_message":
+                        "Opted-out customer should not get email",
+                    "p_metadata": {
+                        "test": True,
+                    },
+                    "p_email": False,
+                },
+            )
+            .execute()
+            .data
+        )
+
+        response = (
+            supabase_admin
+            .table("notification_deliveries")
+            .select("channel, status, attempts")
+            .eq(
+                "notification_id",
+                notification_id,
+            )
+            .execute()
+        )
+
+        deliveries = response.data or []
+
+        channels = {
+            row["channel"]
+            for row in deliveries
+        }
+
+        assert channels == {
+            "in_app",
+        }
+
+        assert len(deliveries) == 1
+
+        assert (
+            deliveries[0]["status"]
+            == "pending"
+        )
+
+        assert (
+            deliveries[0]["attempts"]
+            == 0
+        )
+
+    finally:
+        if notification_id:
+            (
+                supabase_admin
+                .table("notifications")
+                .delete()
+                .eq(
+                    "id",
+                    notification_id,
+                )
+                .execute()
+            )
+
+        _restore_email_preference(
+            existed,
+            original_value,
         )
