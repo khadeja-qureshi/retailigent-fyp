@@ -3,6 +3,7 @@ from typing import Any
 from app.services.inventory_service import (
     get_inventory_row,
     get_inventory_snapshot,
+    get_inventory_snapshot_enriched,
 )
 
 
@@ -40,6 +41,19 @@ class InventoryAgent:
         return get_inventory_snapshot(
             variant_id=variant_id,
         )
-
+    
+    def get_stock_snapshot_with_branches(
+        self,
+        variant_id: str,
+    ) -> list[dict[str, Any]]:
+        """
+        Get exact current inventory with active branch
+        information and DB-authoritative stock status.
+        """
+        return (
+            get_inventory_snapshot_enriched(
+                variant_id=variant_id,
+            )
+        ) 
 
 inventory_agent = InventoryAgent()

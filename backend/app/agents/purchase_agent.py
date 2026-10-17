@@ -14,11 +14,9 @@ class PurchaseAgent:
     """
     Purchase Agent for Retailigent.
 
-    Responsible for completing customer purchases through the
-    deterministic purchase service.
-
-    The agent does not access the database directly. It delegates
-    purchase operations to the purchase service.
+    Coordinates customer purchases while leaving
+    pricing, inventory validation, idempotency, and
+    purchase execution to deterministic services/RPCs.
     """
 
     def purchase_from_reservation(
@@ -29,13 +27,16 @@ class PurchaseAgent:
         quantity: int | None = None,
     ) -> dict[str, Any]:
         """
-        Convert an existing customer reservation into a purchase.
+        Convert an existing customer reservation
+        into a purchase.
         """
-        return convert_customer_reservation_to_purchase(
-            customer_id=customer_id,
-            reservation_id=reservation_id,
-            idempotency_key=idempotency_key,
-            quantity=quantity,
+        return (
+            convert_customer_reservation_to_purchase(
+                customer_id=customer_id,
+                reservation_id=reservation_id,
+                idempotency_key=idempotency_key,
+                quantity=quantity,
+            )
         )
 
     def purchase_direct(
@@ -45,21 +46,91 @@ class PurchaseAgent:
         quantity: int,
         idempotency_key: str,
         branch_id: str | None = None,
-        smart_cart_rule_id: str | None = None,
+        smart_cart_rule_id: (
+            str | None
+        ) = None,
     ) -> dict[str, Any]:
         """
         Complete a direct customer purchase.
 
-        The underlying purchase service executes the purchase
-        atomically through the deterministic purchase RPC.
+        If no branch is explicitly pinned, resolve an
+        actual active branch that currently has enough
+        sellable stock before executing the purchase.
         """
+
+        resolved_branch_id = branch_id
+
+        if not resolved_branch_id:
+            resolved_branch_id = (
+                find_purchase_branch(
+                    variant_id=variant_id,
+                    quantity=quantity,
+                )
+            )
+
+        if not resolved_branch_id:
+            return {
+                "success": False,
+                "order_id": None,
+                "purchase_attempt_id": None,
+                "reason_code":
+                    "no_branch_with_stock",
+                "reason": (
+                    "No active branch currently "
+                    "has enough available stock."
+                ),
+            }
+
         return execute_customer_purchase(
             customer_id=customer_id,
             variant_id=variant_id,
             quantity=quantity,
             idempotency_key=idempotency_key,
+            branch_id=resolved_branch_id,
+            smart_cart_rule_id=(
+                smart_cart_rule_id
+            ),
+        )
+
+    def purchase(
+        self,
+        customer_id: str,
+        variant_id: str,
+        quantity: int,
+        idempotency_key: str,
+        branch_id: str | None = None,
+        reservation_id: str | None = None,
+    ) -> dict[str, Any]:
+        """
+        Unified customer purchase entry point.
+
+        If a matching reservation is explicitly
+        supplied, convert that reservation.
+
+        Otherwise perform a direct deterministic
+        purchase.
+        """
+
+        if reservation_id:
+            return (
+                self.purchase_from_reservation(
+                    customer_id=customer_id,
+                    reservation_id=(
+                        reservation_id
+                    ),
+                    idempotency_key=(
+                        idempotency_key
+                    ),
+                    quantity=quantity,
+                )
+            )
+
+        return self.purchase_direct(
+            customer_id=customer_id,
+            variant_id=variant_id,
+            quantity=quantity,
+            idempotency_key=idempotency_key,
             branch_id=branch_id,
-            smart_cart_rule_id=smart_cart_rule_id,
         )
 
     def process_auto_buy_rule(
@@ -69,17 +140,21 @@ class PurchaseAgent:
         """
         Process a triggered Smart Cart auto-buy rule.
 
-        This is an internal system path. The customer client does
-        not directly call execute_mock_purchase for Smart Cart.
+        This is an internal system path. The customer
+        client never directly executes the purchase RPC.
         """
-        rule = get_smart_cart_rule_for_system(
-            rule_id
+
+        rule = (
+            get_smart_cart_rule_for_system(
+                rule_id
+            )
         )
 
         if rule["status"] != "triggered":
             return {
                 "processed": False,
-                "reason": "rule_not_triggered",
+                "reason":
+                    "rule_not_triggered",
             }
 
         if (
@@ -88,28 +163,35 @@ class PurchaseAgent:
         ):
             return {
                 "processed": False,
-                "reason": "not_auto_buy",
+                "reason":
+                    "not_auto_buy",
             }
 
-        branch_id = rule.get("branch_id")
-
-        if not branch_id:
-            branch_id = find_purchase_branch(
-                variant_id=rule["variant_id"],
-                quantity=rule["quantity"],
-            )
+        branch_id = rule.get(
+            "branch_id"
+        )
 
         idempotency_key = (
             f"smart-cart:{rule['id']}"
         )
 
-        result = execute_customer_purchase(
-            customer_id=rule["customer_id"],
-            variant_id=rule["variant_id"],
-            quantity=rule["quantity"],
-            idempotency_key=idempotency_key,
+        result = self.purchase_direct(
+            customer_id=(
+                rule["customer_id"]
+            ),
+            variant_id=(
+                rule["variant_id"]
+            ),
+            quantity=(
+                rule["quantity"]
+            ),
+            idempotency_key=(
+                idempotency_key
+            ),
             branch_id=branch_id,
-            smart_cart_rule_id=rule["id"],
+            smart_cart_rule_id=(
+                rule["id"]
+            ),
         )
 
         return {
