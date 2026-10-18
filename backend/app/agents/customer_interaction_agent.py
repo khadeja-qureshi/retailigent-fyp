@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 import re
@@ -6,6 +5,7 @@ import re
 from app.schemas.chat import (
     ExtractedEntities,
     ParsedCustomerMessage,
+    StockStatusBlock,
 )
 
 
@@ -389,8 +389,6 @@ def _extract_size(
             raw
         )
 
-    # Explicit short form:
-    # "kurta M"
     short_match = re.search(
         r"\b(?:kurta|shirt|dress|suit)"
         r"\s+(xs|s|m|l|xl|xxl)\b",
@@ -673,9 +671,6 @@ def extract_entities(
     if intent == "smart_cart_create":
         target_price = _extract_target_price(text)
 
-        # A Smart Cart target should not
-        # also become a product-search
-        # max-price filter.
         if target_price is not None:
             max_price = None
 
@@ -700,6 +695,7 @@ def extract_entities(
 # Intent classification
 # ============================================================================
 
+
 def classify_intent(
     message: str,
 ) -> str:
@@ -707,8 +703,6 @@ def classify_intent(
         message
     )
 
-    # Explicit Smart Cart wording has
-    # highest priority.
     if _contains_any(
         text,
         {
@@ -722,11 +716,6 @@ def classify_intent(
     ):
         return "smart_cart_create"
 
-    # Discount-based notify request is also
-    # treated as a notify-only Smart Cart rule.
-    #
-    # IMPORTANT: this variable must be defined
-    # OUTSIDE the previous if block.
     discount_notify_request = (
         bool(
             re.search(
@@ -749,8 +738,6 @@ def classify_intent(
     if discount_notify_request:
         return "smart_cart_create"
 
-    # Ordinary alerts come after Smart Cart
-    # detection.
     if _contains_any(
         text,
         {
@@ -787,7 +774,6 @@ def classify_intent(
 
     if conditional_purchase:
         return "smart_cart_create"
-    
 
     cart_add_phrase = (
         _contains_any(
@@ -1027,12 +1013,13 @@ def _clarification_for(
 
 class CustomerInteractionAgent:
     """
-    Deterministic language-understanding layer.
+    Deterministic customer-language layer.
 
-    This agent extracts customer intent and entities. It does not determine
-    authoritative prices, inventory, branch availability, or purchase results.
-    Those remain the responsibility of specialist agents and database-backed
-    services.
+    This agent detects language, extracts intent/entities, handles
+    clarification wording, and composes final customer-facing text. It does
+    not determine authoritative prices, inventory, branch availability, or
+    purchase results. Those remain the responsibility of specialist agents
+    and database-backed services.
     """
 
     agent_key = "customer_interaction_agent"
@@ -1069,6 +1056,357 @@ class CustomerInteractionAgent:
             entities=entities,
             requires_clarification=requires_clarification,
             clarification_question=clarification_question,
+        )
+
+    def compose_generic_clarification(
+        self,
+        language: str,
+    ) -> str:
+        if language in {
+            "roman_urdu",
+            "mixed",
+        }:
+            return (
+                "Thora clarify kar dein ke "
+                "aap kya karna chahte hain?"
+            )
+
+        return "Could you clarify what you mean?"
+
+    def compose_search_response(
+        self,
+        language: str,
+        count: int,
+    ) -> str:
+        if count == 0:
+            if language in {
+                "roman_urdu",
+                "mixed",
+            }:
+                return (
+                    "Mujhe koi matching "
+                    "product nahi mila."
+                )
+
+            return (
+                "I couldn't find any "
+                "matching products."
+            )
+
+        if language == "roman_urdu":
+            return (
+                f"Mujhe {count} matching "
+                "product milay hain."
+            )
+
+        if language == "mixed":
+            return (
+                f"Mujhe {count} matching "
+                "products milay hain."
+            )
+
+        return (
+            f"I found {count} matching "
+            f"product{'s' if count != 1 else ''}."
+        )
+
+    def compose_stock_response(
+        self,
+        language: str,
+        block: StockStatusBlock,
+        *,
+        requested_branch: str | None = None,
+    ) -> str:
+        total = sum(
+            row.available_quantity
+            for row in block.branches
+        )
+
+        if requested_branch:
+            if total > 0:
+                if language in {
+                    "roman_urdu",
+                    "mixed",
+                }:
+                    return (
+                        f"Ji, {requested_branch} "
+                        f"mein {total} available "
+                        "hai."
+                    )
+
+                return (
+                    f"Yes, {total} unit"
+                    f"{'s are' if total != 1 else ' is'} "
+                    f"available at {requested_branch}."
+                )
+
+            if language in {
+                "roman_urdu",
+                "mixed",
+            }:
+                return (
+                    f"{requested_branch} mein "
+                    "abhi stock available "
+                    "nahi hai."
+                )
+
+            return (
+                "It is currently out of stock "
+                f"at {requested_branch}."
+            )
+
+        if total > 0:
+            if language in {
+                "roman_urdu",
+                "mixed",
+            }:
+                return (
+                    f"Ji, total {total} unit"
+                    f"{'s' if total != 1 else ''} "
+                    "available hain."
+                )
+
+            return (
+                f"There {'are' if total != 1 else 'is'} "
+                f"{total} unit"
+                f"{'s' if total != 1 else ''} "
+                "available."
+            )
+
+        if language in {
+            "roman_urdu",
+            "mixed",
+        }:
+            return (
+                "Abhi yeh item out of "
+                "stock hai."
+            )
+
+        return (
+            "This item is currently "
+            "out of stock."
+        )
+
+    def compose_stock_reference_clarification(
+        self,
+        language: str,
+    ) -> str:
+        if language in {
+            "roman_urdu",
+            "mixed",
+        }:
+            return (
+                "Kaunsa exact item check karna hai? "
+                "Aap first one, second one, "
+                "ya koi product select kar sakte hain."
+            )
+
+        return (
+            "Which exact item do you want me to check? "
+            "You can say first one, second one, "
+            "or select a product."
+        )
+
+    def compose_cart_added_response(
+        self,
+        language: str,
+        quantity: int,
+    ) -> str:
+        if language in {
+            "roman_urdu",
+            "mixed",
+        }:
+            return (
+                f"Ji, {quantity} item "
+                "cart mein add kar diya."
+            )
+
+        return (
+            f"Added {quantity} item"
+            f"{'s' if quantity != 1 else ''} "
+            "to your cart."
+        )
+
+    def compose_wishlist_added_response(
+        self,
+        language: str,
+    ) -> str:
+        if language in {
+            "roman_urdu",
+            "mixed",
+        }:
+            return (
+                "Ji, item wishlist mein "
+                "add kar diya."
+            )
+
+        return (
+            "Added the item to your "
+            "wishlist."
+        )
+
+    def compose_item_reference_clarification(
+        self,
+        language: str,
+    ) -> str:
+        if language in {
+            "roman_urdu",
+            "mixed",
+        }:
+            return (
+                "Kaunsa item? Aap first one, "
+                "second one, ya koi product "
+                "select kar sakte hain."
+            )
+
+        return (
+            "Which item do you mean? "
+            "You can say first one, second one, "
+            "or select a product."
+        )
+
+    def compose_smart_cart_trigger_clarification(
+        self,
+        language: str,
+    ) -> str:
+        if language in {
+            "roman_urdu",
+            "mixed",
+        }:
+            return (
+                "Smart Cart rule kis price ya "
+                "minimum discount par trigger "
+                "hona chahiye?"
+            )
+
+        return (
+            "What price or minimum discount should "
+            "trigger the Smart Cart rule?"
+        )
+
+    def compose_smart_cart_authorization_clarification(
+        self,
+        language: str,
+    ) -> str:
+        if language in {
+            "roman_urdu",
+            "mixed",
+        }:
+            return (
+                "Condition match hone par sirf "
+                "notify karun, ya automatic "
+                "purchase ki authorization hai?"
+            )
+
+        return (
+            "Should I only notify you when the "
+            "condition matches, or are you "
+            "authorizing automatic purchase?"
+        )
+
+    def compose_smart_cart_created_response(
+        self,
+        language: str,
+        authorization_mode: str,
+    ) -> str:
+        if authorization_mode == "auto_buy":
+            if language in {
+                "roman_urdu",
+                "mixed",
+            }:
+                return (
+                    "Smart Cart rule bana diya. "
+                    "Condition match hone par "
+                    "authorized automatic purchase "
+                    "attempt hoga."
+                )
+
+            return (
+                "Your Smart Cart rule is active. "
+                "When the condition matches, the "
+                "authorized automatic purchase "
+                "workflow can run."
+            )
+
+        if language in {
+            "roman_urdu",
+            "mixed",
+        }:
+            return (
+                "Smart Cart rule bana diya. "
+                "Condition match hone par "
+                "aapko notify kiya jayega."
+            )
+
+        return (
+            "Your Smart Cart rule is active. "
+            "You'll be notified when the "
+            "condition matches."
+        )
+
+    def compose_purchase_response(
+        self,
+        language: str,
+        result: dict,
+    ) -> str:
+        if result.get("success") is True:
+            order_id = result.get(
+                "order_id"
+            )
+
+            if language in {
+                "roman_urdu",
+                "mixed",
+            }:
+                return (
+                    "Purchase successfully complete "
+                    "ho gaya. "
+                    f"Order ID: {order_id}"
+                )
+
+            return (
+                "Purchase completed successfully. "
+                f"Order ID: {order_id}"
+            )
+
+        reason = (
+            result.get("reason")
+            or
+            "The purchase could not be completed."
+        )
+
+        if language in {
+            "roman_urdu",
+            "mixed",
+        }:
+            return (
+                "Purchase complete nahi ho saka. "
+                f"{reason}"
+            )
+
+        return (
+            "The purchase could not be completed. "
+            f"{reason}"
+        )
+
+    def compose_unhandled_response(
+        self,
+        language: str,
+    ) -> str:
+        if language in {
+            "roman_urdu",
+            "mixed",
+        }:
+            return (
+                "Request samajh aa gaya, lekin "
+                "yeh action abhi orchestrator "
+                "se connected nahi hai."
+            )
+
+        return (
+            "I understood the request, "
+            "but this action has not been "
+            "connected to the orchestrator yet."
         )
 
 

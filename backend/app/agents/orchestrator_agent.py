@@ -13,7 +13,6 @@ from app.agents.inventory_agent import (
 from app.agents.product_agent import (
     product_agent,
 )
-
 from app.agents.purchase_agent import (
     purchase_agent,
 )
@@ -261,7 +260,6 @@ def build_product_carousel(
         name = product.get("name")
         sku = variant.get("sku")
 
-        # Required identity fields must come from specialist output.
         if not all(
             [
                 product_id,
@@ -341,7 +339,6 @@ def build_stock_status_block(
 
         status = row.get("status")
 
-        # Only DB-authoritative statuses are allowed through.
         if status not in {
             "out_of_stock",
             "low_stock",
@@ -379,268 +376,9 @@ def build_stock_status_block(
 
 
 # ============================================================================
-# Response composition
-# ============================================================================
-
-
-def _search_message(
-    language: str,
-    count: int,
-) -> str:
-    if count == 0:
-        if language in {
-            "roman_urdu",
-            "mixed",
-        }:
-            return (
-                "Mujhe koi matching "
-                "product nahi mila."
-            )
-
-        return (
-            "I couldn't find any "
-            "matching products."
-        )
-
-    if language == "roman_urdu":
-        return (
-            f"Mujhe {count} matching "
-            "product milay hain."
-        )
-
-    if language == "mixed":
-        return (
-            f"Mujhe {count} matching "
-            "products milay hain."
-        )
-
-    return (
-        f"I found {count} matching "
-        f"product{'s' if count != 1 else ''}."
-    )
-
-
-def _stock_message(
-    language: str,
-    block: StockStatusBlock,
-    *,
-    requested_branch: str | None = None,
-) -> str:
-    total = sum(
-        row.available_quantity
-        for row in block.branches
-    )
-
-    if requested_branch:
-        if total > 0:
-            if language in {
-                "roman_urdu",
-                "mixed",
-            }:
-                return (
-                    f"Ji, {requested_branch} "
-                    f"mein {total} available "
-                    "hai."
-                )
-
-            return (
-                f"Yes, {total} unit"
-                f"{'s are' if total != 1 else ' is'} "
-                f"available at {requested_branch}."
-            )
-
-        if language in {
-            "roman_urdu",
-            "mixed",
-        }:
-            return (
-                f"{requested_branch} mein "
-                "abhi stock available "
-                "nahi hai."
-            )
-
-        return (
-            "It is currently out of stock "
-            f"at {requested_branch}."
-        )
-
-    if total > 0:
-        if language in {
-            "roman_urdu",
-            "mixed",
-        }:
-            return (
-                f"Ji, total {total} unit"
-                f"{'s' if total != 1 else ''} "
-                "available hain."
-            )
-
-        return (
-            f"There {'are' if total != 1 else 'is'} "
-            f"{total} unit"
-            f"{'s' if total != 1 else ''} "
-            "available."
-        )
-
-    if language in {
-        "roman_urdu",
-        "mixed",
-    }:
-        return (
-            "Abhi yeh item out of "
-            "stock hai."
-        )
-
-    return (
-        "This item is currently "
-        "out of stock."
-    )
-
-
-def _cart_added_message(
-    language: str,
-    quantity: int,
-) -> str:
-    if language in {
-        "roman_urdu",
-        "mixed",
-    }:
-        return (
-            f"Ji, {quantity} item "
-            "cart mein add kar diya."
-        )
-
-    return (
-        f"Added {quantity} item"
-        f"{'s' if quantity != 1 else ''} "
-        "to your cart."
-    )
-
-
-def _wishlist_added_message(
-    language: str,
-) -> str:
-    if language in {
-        "roman_urdu",
-        "mixed",
-    }:
-        return (
-            "Ji, item wishlist mein "
-            "add kar diya."
-        )
-
-    return (
-        "Added the item to your "
-        "wishlist."
-    )
-
-
-def _item_reference_clarification(
-    language: str,
-) -> str:
-    if language in {
-        "roman_urdu",
-        "mixed",
-    }:
-        return (
-            "Kaunsa item? Aap first one, "
-            "second one, ya koi product "
-            "select kar sakte hain."
-        )
-
-    return (
-        "Which item do you mean? "
-        "You can say first one, second one, "
-        "or select a product."
-    )
-
-
-def _smart_cart_created_message(
-    language: str,
-    authorization_mode: str,
-) -> str:
-    if authorization_mode == "auto_buy":
-        if language in {
-            "roman_urdu",
-            "mixed",
-        }:
-            return (
-                "Smart Cart rule bana diya. "
-                "Condition match hone par "
-                "authorized automatic purchase "
-                "attempt hoga."
-            )
-
-        return (
-            "Your Smart Cart rule is active. "
-            "When the condition matches, the "
-            "authorized automatic purchase "
-            "workflow can run."
-        )
-
-    if language in {
-        "roman_urdu",
-        "mixed",
-    }:
-        return (
-            "Smart Cart rule bana diya. "
-            "Condition match hone par "
-            "aapko notify kiya jayega."
-        )
-
-    return (
-        "Your Smart Cart rule is active. "
-        "You'll be notified when the "
-        "condition matches."
-    )
-
-
-# ============================================================================
 # Orchestrator
 # ============================================================================
-def _purchase_result_message(
-    language: str,
-    result: dict,
-) -> str:
-    if result.get("success") is True:
-        order_id = result.get(
-            "order_id"
-        )
 
-        if language in {
-            "roman_urdu",
-            "mixed",
-        }:
-            return (
-                "Purchase successfully complete "
-                "ho gaya. "
-                f"Order ID: {order_id}"
-            )
-
-        return (
-            "Purchase completed successfully. "
-            f"Order ID: {order_id}"
-        )
-
-    reason = (
-        result.get("reason")
-        or
-        "The purchase could not be completed."
-    )
-
-    if language in {
-        "roman_urdu",
-        "mixed",
-    }:
-        return (
-            "Purchase complete nahi ho saka. "
-            f"{reason}"
-        )
-
-    return (
-        "The purchase could not be completed. "
-        f"{reason}"
-    )
 
 class OrchestratorAgent:
     agent_key = "orchestrator_agent"
@@ -800,8 +538,6 @@ class OrchestratorAgent:
                 parsed.language,
             )
 
-        # Always persist the user message.
-        # This must NOT be inside the language-change if block.
         user_message = (
             chat_service
             .append_message(
@@ -833,12 +569,11 @@ class OrchestratorAgent:
             )
         )
 
-        run_id = str(run["id"])
+        run_id = str(
+            run["id"]
+        )
 
         try:
-            # ---------------------------------------------------------
-            # Trace Customer Interaction Agent
-            # ---------------------------------------------------------
             parse_task = (
                 chat_service
                 .create_agent_task(
@@ -872,15 +607,13 @@ class OrchestratorAgent:
                 )
             )
 
-            # ---------------------------------------------------------
-            # Parser-level clarification
-            # ---------------------------------------------------------
             if parsed.requires_clarification:
                 content = (
                     parsed.clarification_question
-                    or (
-                        "Could you clarify "
-                        "what you mean?"
+                    or
+                    customer_interaction_agent
+                    .compose_generic_clarification(
+                        parsed.language
                     )
                 )
 
@@ -894,41 +627,40 @@ class OrchestratorAgent:
                     content=content,
                 )
 
-            # ---------------------------------------------------------
-            # Product search
-            # ---------------------------------------------------------
             if parsed.intent == "product_search":
-                plan = plan_intent(parsed.intent)
+                plan = plan_intent(
+                    parsed.intent
+                )
                 assert plan is not None
 
                 arguments = {
                     "query": parsed.raw_message,
                     "match_count": 10,
-                    "color": parsed.entities.color,
-                    "size": parsed.entities.size,
-                    "material": (
-                        parsed.entities.material
-                    ),
-                    "category": (
-                        parsed.entities.category
-                    ),
-                    "min_price": (
-                        parsed.entities.min_price
-                    ),
-                    "max_price": (
-                        parsed.entities.max_price
-                    ),
+                    "color":
+                        parsed.entities.color,
+                    "size":
+                        parsed.entities.size,
+                    "material":
+                        parsed.entities.material,
+                    "category":
+                        parsed.entities.category,
+                    "min_price":
+                        parsed.entities.min_price,
+                    "max_price":
+                        parsed.entities.max_price,
                 }
 
-                results = self._run_traced_tool(
-                    run_id=run_id,
-                    plan=plan,
-                    arguments=arguments,
-                    call=lambda: (
-                        product_agent.search(
-                            **arguments
-                        )
-                    ),
+                results = (
+                    self._run_traced_tool(
+                        run_id=run_id,
+                        plan=plan,
+                        arguments=arguments,
+                        call=lambda: (
+                            product_agent.search(
+                                **arguments
+                            )
+                        ),
+                    )
                 )
 
                 block = build_product_carousel(
@@ -937,15 +669,17 @@ class OrchestratorAgent:
 
                 variant_ids = [
                     product.variant_id
-                    for product in block.products
+                    for product
+                    in block.products
                 ]
 
                 updates = {
-                    "last_intent": parsed.intent,
-                    "language": parsed.language,
-                    "last_search_variant_ids": (
-                        variant_ids
-                    ),
+                    "last_intent":
+                        parsed.intent,
+                    "language":
+                        parsed.language,
+                    "last_search_variant_ids":
+                        variant_ids,
                 }
 
                 if variant_ids:
@@ -959,16 +693,16 @@ class OrchestratorAgent:
                     updates,
                 )
 
-                content = _search_message(
-                    parsed.language,
-                    len(block.products),
+                content = (
+                    customer_interaction_agent
+                    .compose_search_response(
+                        parsed.language,
+                        len(block.products),
+                    )
                 )
 
                 blocks = [block]
 
-            # ---------------------------------------------------------
-            # Stock check
-            # ---------------------------------------------------------
             elif parsed.intent == "stock_check":
                 variant_id = (
                     resolve_variant_reference(
@@ -986,63 +720,74 @@ class OrchestratorAgent:
                         run_id=run_id,
                         parsed=parsed,
                         content=(
-                            "Which exact item do you "
-                            "want me to check? You can "
-                            "say first one, second one, "
-                            "or select a product."
+                            customer_interaction_agent
+                            .compose_stock_reference_clarification(
+                                parsed.language
+                            )
                         ),
                     )
 
-                plan = plan_intent(parsed.intent)
+                plan = plan_intent(
+                    parsed.intent
+                )
                 assert plan is not None
 
                 arguments = {
                     "variant_id": variant_id,
                 }
 
-                inventory = self._run_traced_tool(
-                    run_id=run_id,
-                    plan=plan,
-                    arguments=arguments,
-                    call=lambda: (
-                        inventory_agent
-                        .get_stock_snapshot_with_branches(
-                            variant_id
-                        )
-                    ),
+                inventory = (
+                    self._run_traced_tool(
+                        run_id=run_id,
+                        plan=plan,
+                        arguments=arguments,
+                        call=lambda: (
+                            inventory_agent
+                            .get_stock_snapshot_with_branches(
+                                variant_id
+                            )
+                        ),
+                    )
                 )
 
-                block = build_stock_status_block(
-                    variant_id,
-                    inventory,
-                    branch_name=(
-                        parsed.entities.branch_name
-                    ),
+                block = (
+                    build_stock_status_block(
+                        variant_id,
+                        inventory,
+                        branch_name=(
+                            parsed.entities
+                            .branch_name
+                        ),
+                    )
                 )
 
                 chat_service.merge_conversation_state(
                     customer_id,
                     conversation_id,
                     {
-                        "last_intent": parsed.intent,
-                        "last_variant_id": variant_id,
-                        "language": parsed.language,
+                        "last_intent":
+                            parsed.intent,
+                        "last_variant_id":
+                            variant_id,
+                        "language":
+                            parsed.language,
                     },
                 )
 
-                content = _stock_message(
-                    parsed.language,
-                    block,
-                    requested_branch=(
-                        parsed.entities.branch_name
-                    ),
+                content = (
+                    customer_interaction_agent
+                    .compose_stock_response(
+                        parsed.language,
+                        block,
+                        requested_branch=(
+                            parsed.entities
+                            .branch_name
+                        ),
+                    )
                 )
 
                 blocks = [block]
 
-            # ---------------------------------------------------------
-            # Add to cart
-            # ---------------------------------------------------------
             elif parsed.intent == "add_to_cart":
                 variant_id = (
                     resolve_variant_reference(
@@ -1060,7 +805,8 @@ class OrchestratorAgent:
                         run_id=run_id,
                         parsed=parsed,
                         content=(
-                            _item_reference_clarification(
+                            customer_interaction_agent
+                            .compose_item_reference_clarification(
                                 parsed.language
                             )
                         ),
@@ -1071,7 +817,9 @@ class OrchestratorAgent:
                     or 1
                 )
 
-                plan = plan_intent(parsed.intent)
+                plan = plan_intent(
+                    parsed.intent
+                )
                 assert plan is not None
 
                 arguments = {
@@ -1079,15 +827,19 @@ class OrchestratorAgent:
                     "quantity": quantity,
                 }
 
-                cart = self._run_traced_tool(
-                    run_id=run_id,
-                    plan=plan,
-                    arguments=arguments,
-                    call=lambda: add_cart_item(
-                        customer_id=customer_id,
-                        variant_id=variant_id,
-                        quantity=quantity,
-                    ),
+                cart = (
+                    self._run_traced_tool(
+                        run_id=run_id,
+                        plan=plan,
+                        arguments=arguments,
+                        call=lambda: (
+                            add_cart_item(
+                                customer_id=customer_id,
+                                variant_id=variant_id,
+                                quantity=quantity,
+                            )
+                        ),
+                    )
                 )
 
                 block = CartSummaryBlock(
@@ -1098,22 +850,25 @@ class OrchestratorAgent:
                     customer_id,
                     conversation_id,
                     {
-                        "last_intent": parsed.intent,
-                        "last_variant_id": variant_id,
-                        "language": parsed.language,
+                        "last_intent":
+                            parsed.intent,
+                        "last_variant_id":
+                            variant_id,
+                        "language":
+                            parsed.language,
                     },
                 )
 
-                content = _cart_added_message(
-                    parsed.language,
-                    quantity,
+                content = (
+                    customer_interaction_agent
+                    .compose_cart_added_response(
+                        parsed.language,
+                        quantity,
+                    )
                 )
 
                 blocks = [block]
 
-            # ---------------------------------------------------------
-            # Add to wishlist
-            # ---------------------------------------------------------
             elif parsed.intent == "add_to_wishlist":
                 variant_id = (
                     resolve_variant_reference(
@@ -1131,27 +886,36 @@ class OrchestratorAgent:
                         run_id=run_id,
                         parsed=parsed,
                         content=(
-                            _item_reference_clarification(
+                            customer_interaction_agent
+                            .compose_item_reference_clarification(
                                 parsed.language
                             )
                         ),
                     )
 
-                plan = plan_intent(parsed.intent)
+                plan = plan_intent(
+                    parsed.intent
+                )
                 assert plan is not None
 
                 arguments = {
                     "variant_id": variant_id,
                 }
 
-                wishlist = self._run_traced_tool(
-                    run_id=run_id,
-                    plan=plan,
-                    arguments=arguments,
-                    call=lambda: add_wishlist_item(
-                        customer_id=customer_id,
-                        variant_id=variant_id,
-                    ),
+                wishlist = (
+                    self._run_traced_tool(
+                        run_id=run_id,
+                        plan=plan,
+                        arguments=arguments,
+                        call=lambda: (
+                            add_wishlist_item(
+                                customer_id=
+                                    customer_id,
+                                variant_id=
+                                    variant_id,
+                            )
+                        ),
+                    )
                 )
 
                 block = WishlistBlock(
@@ -1162,22 +926,28 @@ class OrchestratorAgent:
                     customer_id,
                     conversation_id,
                     {
-                        "last_intent": parsed.intent,
-                        "last_variant_id": variant_id,
-                        "language": parsed.language,
+                        "last_intent":
+                            parsed.intent,
+                        "last_variant_id":
+                            variant_id,
+                        "language":
+                            parsed.language,
                     },
                 )
 
-                content = _wishlist_added_message(
-                    parsed.language
+                content = (
+                    customer_interaction_agent
+                    .compose_wishlist_added_response(
+                        parsed.language
+                    )
                 )
 
                 blocks = [block]
 
-            # ---------------------------------------------------------
-            # Create Smart Cart rule
-            # ---------------------------------------------------------
-            elif parsed.intent == "smart_cart_create":
+            elif (
+                parsed.intent
+                == "smart_cart_create"
+            ):
                 variant_id = (
                     resolve_variant_reference(
                         parsed,
@@ -1194,7 +964,8 @@ class OrchestratorAgent:
                         run_id=run_id,
                         parsed=parsed,
                         content=(
-                            _item_reference_clarification(
+                            customer_interaction_agent
+                            .compose_item_reference_clarification(
                                 parsed.language
                             )
                         ),
@@ -1203,7 +974,8 @@ class OrchestratorAgent:
                 if (
                     parsed.entities.target_price
                     is None
-                    and parsed.entities
+                    and
+                    parsed.entities
                     .min_discount_percentage
                     is None
                 ):
@@ -1215,9 +987,10 @@ class OrchestratorAgent:
                         run_id=run_id,
                         parsed=parsed,
                         content=(
-                            "What price or minimum "
-                            "discount should trigger "
-                            "the Smart Cart rule?"
+                            customer_interaction_agent
+                            .compose_smart_cart_trigger_clarification(
+                                parsed.language
+                            )
                         ),
                     )
 
@@ -1235,10 +1008,10 @@ class OrchestratorAgent:
                         run_id=run_id,
                         parsed=parsed,
                         content=(
-                            "Should I only notify you "
-                            "when the condition matches, "
-                            "or are you authorizing "
-                            "automatic purchase?"
+                            customer_interaction_agent
+                            .compose_smart_cart_authorization_clarification(
+                                parsed.language
+                            )
                         ),
                     )
 
@@ -1247,48 +1020,58 @@ class OrchestratorAgent:
                     or 1
                 )
 
-                plan = plan_intent(parsed.intent)
+                plan = plan_intent(
+                    parsed.intent
+                )
                 assert plan is not None
 
                 arguments = {
-                    "variant_id": variant_id,
-                    "quantity": quantity,
+                    "variant_id":
+                        variant_id,
+                    "quantity":
+                        quantity,
                     "target_price": (
-                        parsed.entities.target_price
+                        parsed.entities
+                        .target_price
                     ),
                     "min_discount_percentage": (
                         parsed.entities
                         .min_discount_percentage
                     ),
-                    "authorization_mode": (
-                        authorization_mode
-                    ),
-                    "branch_id": None,
+                    "authorization_mode":
+                        authorization_mode,
+                    "branch_id":
+                        None,
                 }
 
-                rule = self._run_traced_tool(
-                    run_id=run_id,
-                    plan=plan,
-                    arguments=arguments,
-                    call=lambda: (
-                        create_customer_smart_cart_rule(
-                            customer_id=customer_id,
-                            variant_id=variant_id,
-                            quantity=quantity,
-                            target_price=(
-                                parsed.entities
-                                .target_price
-                            ),
-                            min_discount_percentage=(
-                                parsed.entities
-                                .min_discount_percentage
-                            ),
-                            authorization_mode=(
-                                authorization_mode
-                            ),
-                            branch_id=None,
-                        )
-                    ),
+                rule = (
+                    self._run_traced_tool(
+                        run_id=run_id,
+                        plan=plan,
+                        arguments=arguments,
+                        call=lambda: (
+                            create_customer_smart_cart_rule(
+                                customer_id=
+                                    customer_id,
+                                variant_id=
+                                    variant_id,
+                                quantity=
+                                    quantity,
+                                target_price=(
+                                    parsed.entities
+                                    .target_price
+                                ),
+                                min_discount_percentage=(
+                                    parsed.entities
+                                    .min_discount_percentage
+                                ),
+                                authorization_mode=(
+                                    authorization_mode
+                                ),
+                                branch_id=None,
+                            )
+                        ),
+                    )
                 )
 
                 block = SmartCartRuleBlock(
@@ -1299,17 +1082,20 @@ class OrchestratorAgent:
                     customer_id,
                     conversation_id,
                     {
-                        "last_intent": parsed.intent,
-                        "last_variant_id": variant_id,
-                        "last_smart_cart_rule_id": (
-                            rule["id"]
-                        ),
-                        "language": parsed.language,
+                        "last_intent":
+                            parsed.intent,
+                        "last_variant_id":
+                            variant_id,
+                        "last_smart_cart_rule_id":
+                            rule["id"],
+                        "language":
+                            parsed.language,
                     },
                 )
 
                 content = (
-                    _smart_cart_created_message(
+                    customer_interaction_agent
+                    .compose_smart_cart_created_response(
                         parsed.language,
                         authorization_mode,
                     )
@@ -1317,13 +1103,7 @@ class OrchestratorAgent:
 
                 blocks = [block]
 
-                        # ---------------------------------------------------------
-            # Purchase
-            # ---------------------------------------------------------
-            elif (
-                parsed.intent
-                == "purchase"
-            ):
+            elif parsed.intent == "purchase":
                 variant_id = (
                     resolve_variant_reference(
                         parsed,
@@ -1331,11 +1111,10 @@ class OrchestratorAgent:
                     )
                 )
 
-                # Never guess which product the
-                # customer intended to purchase.
                 if not variant_id:
                     content = (
-                        _item_reference_clarification(
+                        customer_interaction_agent
+                        .compose_item_reference_clarification(
                             parsed.language
                         )
                     )
@@ -1390,10 +1169,6 @@ class OrchestratorAgent:
                     or 1
                 )
 
-                # Only use a reservation if the
-                # conversation state explicitly says
-                # that reservation belongs to this
-                # exact variant.
                 reservation_id = None
 
                 if (
@@ -1421,6 +1196,7 @@ class OrchestratorAgent:
                 plan = plan_intent(
                     parsed.intent
                 )
+                assert plan is not None
 
                 arguments = {
                     "customer_id":
@@ -1443,8 +1219,7 @@ class OrchestratorAgent:
                         plan=plan,
                         arguments=arguments,
                         call=lambda: (
-                            purchase_agent
-                            .purchase(
+                            purchase_agent.purchase(
                                 customer_id=
                                     customer_id,
                                 variant_id=
@@ -1461,10 +1236,10 @@ class OrchestratorAgent:
                     )
                 )
 
-                # Validate specialist/service output
-                # before exposing a confirmation block.
                 success = (
-                    result.get("success")
+                    result.get(
+                        "success"
+                    )
                     is True
                 )
 
@@ -1519,8 +1294,6 @@ class OrchestratorAgent:
                         )
 
                 else:
-                    # A failed purchase is NOT an
-                    # order confirmation.
                     blocks = []
 
                     state_updates = {
@@ -1543,21 +1316,19 @@ class OrchestratorAgent:
                 )
 
                 content = (
-                    _purchase_result_message(
+                    customer_interaction_agent
+                    .compose_purchase_response(
                         parsed.language,
                         result,
                     )
-                )    
+                )
 
-            # ---------------------------------------------------------
-            # Actions not connected yet
-            # ---------------------------------------------------------
             else:
                 content = (
-                    "I understood the request, "
-                    "but this action has not been "
-                    "connected to the orchestrator "
-                    "yet."
+                    customer_interaction_agent
+                    .compose_unhandled_response(
+                        parsed.language
+                    )
                 )
 
                 blocks = []
@@ -1566,14 +1337,13 @@ class OrchestratorAgent:
                     customer_id,
                     conversation_id,
                     {
-                        "last_intent": parsed.intent,
-                        "language": parsed.language,
+                        "last_intent":
+                            parsed.intent,
+                        "language":
+                            parsed.language,
                     },
                 )
 
-            # ---------------------------------------------------------
-            # Persist assistant response
-            # ---------------------------------------------------------
             assistant_message = (
                 chat_service
                 .append_message(
@@ -1583,12 +1353,14 @@ class OrchestratorAgent:
                     content=content,
                     agent_key=self.agent_key,
                     metadata={
-                        "intent": parsed.intent,
+                        "intent":
+                            parsed.intent,
                         "blocks": [
                             block.model_dump(
                                 mode="json"
                             )
-                            for block in blocks
+                            for block
+                            in blocks
                         ],
                     },
                 )
@@ -1598,22 +1370,29 @@ class OrchestratorAgent:
                 run_id,
                 final_response=content,
                 metadata={
-                    "intent": parsed.intent,
-                    "language": parsed.language,
+                    "intent":
+                        parsed.intent,
+                    "language":
+                        parsed.language,
                     "block_types": [
                         block.type
-                        for block in blocks
+                        for block
+                        in blocks
                     ],
                 },
             )
 
             return ChatTurnResponse(
-                conversation_id=conversation_id,
+                conversation_id=
+                    conversation_id,
                 message_id=str(
-                    assistant_message["id"]
+                    assistant_message[
+                        "id"
+                    ]
                 ),
                 content=content,
-                language=parsed.language,
+                language=
+                    parsed.language,
                 blocks=blocks,
             )
 
@@ -1621,7 +1400,9 @@ class OrchestratorAgent:
             try:
                 chat_service.fail_agent_run(
                     run_id,
-                    error_message=str(exc),
+                    error_message=str(
+                        exc
+                    ),
                 )
             finally:
                 raise

@@ -56,22 +56,23 @@ export default function OrdersPage() {
 
 
   useEffect(() => {
-    // Initial page load
+  queueMicrotask(() => {
     void loadOrders();
+  });
 
-    // Poll every 2 seconds so auto-buy
-    // orders appear without refreshing.
-    const intervalId =
-      window.setInterval(() => {
-        void loadOrders(true);
-      }, 2000);
+  // Poll every 5 seconds so auto-buy
+  // orders appear without refreshing.
+  const intervalId =
+    window.setInterval(() => {
+      void loadOrders(true);
+    }, 5000);
 
-    return () => {
-      window.clearInterval(
-        intervalId
-      );
-    };
-  }, [loadOrders]);
+  return () => {
+    window.clearInterval(
+      intervalId
+    );
+  };
+}, [loadOrders]);
 
 
   return (

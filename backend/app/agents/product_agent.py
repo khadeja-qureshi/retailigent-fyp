@@ -3,6 +3,88 @@ from typing import Any, Optional
 from app.services.search_service import search_variants
 
 
+def _normalize_category_tokens(
+    value: str,
+) -> set[str]:
+    """
+    Normalize natural-language category terms.
+
+    Examples:
+    - "kurta" -> {"kurta"}
+    - "Kurtas" -> {"kurtas", "kurta"}
+    - "Casual Shirts" ->
+      {"casual", "shirts", "shirt"}
+    - "test-men-kurtas" ->
+      {"test", "men", "kurtas", "kurta"}
+    """
+    text = (
+        str(value or "")
+        .strip()
+        .lower()
+        .replace("-", " ")
+        .replace("_", " ")
+    )
+
+    tokens: set[str] = set()
+
+    for raw_token in text.split():
+        token = raw_token.strip()
+
+        if not token:
+            continue
+
+        tokens.add(token)
+
+        # Basic English plural normalization.
+        if (
+            len(token) > 4
+            and token.endswith("ies")
+        ):
+            tokens.add(
+                token[:-3] + "y"
+            )
+
+        elif (
+            len(token) > 3
+            and token.endswith("s")
+            and not token.endswith("ss")
+        ):
+            tokens.add(
+                token[:-1]
+            )
+
+    return tokens
+
+
+def _category_matches(
+    requested: str,
+    category_name: str,
+    category_slug: str,
+) -> bool:
+    requested_tokens = (
+        _normalize_category_tokens(
+            requested
+        )
+    )
+
+    candidate_tokens = (
+        _normalize_category_tokens(
+            category_name
+        )
+        |
+        _normalize_category_tokens(
+            category_slug
+        )
+    )
+
+    if not requested_tokens:
+        return True
+
+    return requested_tokens.issubset(
+        candidate_tokens
+    )
+
+
 class ProductAgent:
     """
     Product Agent for Retailigent.
@@ -61,22 +143,49 @@ class ProductAgent:
         filtered_results = []
 
         for result in results:
-            product = result.get("product") or {}
-            variant = result.get("variant") or {}
-            variant_color = variant.get("color") or {}
-            variant_size = variant.get("size") or {}
-            pricing = result.get("pricing") or {}
-            inventory = result.get("inventory") or []
+            product = (
+                result.get("product")
+                or {}
+            )
+
+            variant = (
+                result.get("variant")
+                or {}
+            )
+
+            variant_color = (
+                variant.get("color")
+                or {}
+            )
+
+            variant_size = (
+                variant.get("size")
+                or {}
+            )
+
+            pricing = (
+                result.get("pricing")
+                or {}
+            )
+
+            inventory = (
+                result.get("inventory")
+                or []
+            )
 
             # ---------------------------------------------------------
             # Color filter
             # ---------------------------------------------------------
             if color:
                 actual_color = str(
-                    variant_color.get("name") or ""
+                    variant_color.get("name")
+                    or ""
                 ).strip().lower()
 
-                if actual_color != color.strip().lower():
+                if (
+                    actual_color
+                    != color.strip().lower()
+                ):
                     continue
 
             # ---------------------------------------------------------
@@ -84,10 +193,14 @@ class ProductAgent:
             # ---------------------------------------------------------
             if size:
                 actual_size = str(
-                    variant_size.get("name") or ""
+                    variant_size.get("name")
+                    or ""
                 ).strip().lower()
 
-                if actual_size != size.strip().lower():
+                if (
+                    actual_size
+                    != size.strip().lower()
+                ):
                     continue
 
             # ---------------------------------------------------------
@@ -95,53 +208,72 @@ class ProductAgent:
             # ---------------------------------------------------------
             if material:
                 actual_material = str(
-                    product.get("material") or ""
+                    product.get("material")
+                    or ""
                 ).strip().lower()
 
-                if actual_material != material.strip().lower():
+                if (
+                    actual_material
+                    != material.strip().lower()
+                ):
                     continue
 
             # ---------------------------------------------------------
             # Category filter
             # ---------------------------------------------------------
             if category:
-                category_data = product.get("category") or {}
+                category_data = (
+                    product.get("category")
+                    or {}
+                )
 
                 category_name = str(
-                    category_data.get("name") or ""
-                ).strip().lower()
+                    category_data.get("name")
+                    or ""
+                )
 
                 category_slug = str(
-                    category_data.get("slug") or ""
-                ).strip().lower()
+                    category_data.get("slug")
+                    or ""
+                )
 
-                requested_category = category.strip().lower()
-
-                if requested_category not in {
+                if not _category_matches(
+                    category,
                     category_name,
                     category_slug,
-                }:
+                ):
                     continue
+
             # ---------------------------------------------------------
             # Price filters
             # ---------------------------------------------------------
-            effective_price = pricing.get("effective_price")
+            effective_price = (
+                pricing.get(
+                    "effective_price"
+                )
+            )
 
             if effective_price is None:
-                effective_price = variant.get("price")
+                effective_price = (
+                    variant.get("price")
+                )
 
             if effective_price is not None:
-                effective_price = float(effective_price)
+                effective_price = float(
+                    effective_price
+                )
 
                 if (
                     min_price is not None
-                    and effective_price < min_price
+                    and effective_price
+                    < min_price
                 ):
                     continue
 
                 if (
                     max_price is not None
-                    and effective_price > max_price
+                    and effective_price
+                    > max_price
                 ):
                     continue
 
@@ -149,24 +281,38 @@ class ProductAgent:
             # City filter
             # ---------------------------------------------------------
             if city:
-                requested_city = city.strip().lower()
+                requested_city = (
+                    city.strip().lower()
+                )
 
                 matching_city = False
 
                 for inventory_row in inventory:
-                    branch = inventory_row.get("branch") or {}
+                    branch = (
+                        inventory_row.get(
+                            "branch"
+                        )
+                        or {}
+                    )
+
                     branch_city = str(
-                        branch.get("city") or ""
+                        branch.get("city")
+                        or ""
                     ).strip().lower()
 
-                    if branch_city == requested_city:
+                    if (
+                        branch_city
+                        == requested_city
+                    ):
                         matching_city = True
                         break
 
                 if not matching_city:
                     continue
 
-            filtered_results.append(result)
+            filtered_results.append(
+                result
+            )
 
         return filtered_results
 

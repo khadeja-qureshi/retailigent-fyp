@@ -21,6 +21,8 @@ import {
 } from "@/lib/api";
 
 
+
+
 export default function AlertsPage() {
   const [data, setData] =
     useState<AlertListResponse | null>(
@@ -84,22 +86,23 @@ export default function AlertsPage() {
 
 
   useEffect(() => {
+  queueMicrotask(() => {
     void loadAlerts();
+  });
 
-    // Poll every 2 seconds so triggered
-    // alerts update without refreshing.
-    const intervalId =
-      window.setInterval(() => {
-        void loadAlerts(true);
-      }, 5000);
+  // Poll every 5 seconds so triggered
+  // alerts update without refreshing.
+  const intervalId =
+    window.setInterval(() => {
+      void loadAlerts(true);
+    }, 5000);
 
-    return () => {
-      window.clearInterval(
-        intervalId
-      );
-    };
-  }, [loadAlerts]);
-
+  return () => {
+    window.clearInterval(
+      intervalId
+    );
+  };
+}, [loadAlerts]);
 
   async function handleCreate() {
     if (!variantId.trim()) {

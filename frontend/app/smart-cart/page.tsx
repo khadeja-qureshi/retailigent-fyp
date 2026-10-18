@@ -96,22 +96,24 @@ export default function SmartCartPage() {
 
 
   useEffect(() => {
+  queueMicrotask(() => {
     void loadRules();
+  });
 
-    // Poll every 2 seconds.
-    // This lets Active -> Triggered -> Completed
-    // appear automatically without refreshing.
-    const intervalId =
-      window.setInterval(() => {
-        void loadRules(true);
-      }, 2000);
+  // Poll every 5 seconds.
+  // This lets Active -> Triggered -> Completed
+  // appear automatically without refreshing.
+  const intervalId =
+    window.setInterval(() => {
+      void loadRules(true);
+    }, 5000);
 
-    return () => {
-      window.clearInterval(
-        intervalId
-      );
-    };
-  }, [loadRules]);
+  return () => {
+    window.clearInterval(
+      intervalId
+    );
+  };
+}, [loadRules]);
 
 
   async function handleCreate() {
@@ -564,7 +566,7 @@ export default function SmartCartPage() {
             </h2>
 
             <span className="text-xs text-neutral-500">
-              Auto-refreshes every 2 seconds
+              Auto-refreshes every 5 seconds
             </span>
 
           </div>

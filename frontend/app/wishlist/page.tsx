@@ -42,8 +42,10 @@ export default function WishlistPage() {
   }
 
   useEffect(() => {
-    loadWishlist();
-  }, []);
+  queueMicrotask(() => {
+    void loadWishlist();
+  });
+}, []);
 
   async function handleAdd() {
     if (!variantId.trim()) {

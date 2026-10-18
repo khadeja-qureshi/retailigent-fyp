@@ -46,8 +46,10 @@ export default function CartPage() {
 
 
   useEffect(() => {
-    loadCart();
-  }, []);
+  queueMicrotask(() => {
+    void loadCart();
+  });
+}, []);
 
 
   async function handleAdd() {

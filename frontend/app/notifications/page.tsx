@@ -68,16 +68,18 @@ export default function NotificationsPage() {
 
 
   useEffect(() => {
+  queueMicrotask(() => {
     void load();
+  });
 
-    const id = window.setInterval(() => {
-      void load(true);
-    }, 5000);
+  const id = window.setInterval(() => {
+    void load(true);
+  }, 5000);
 
-    return () => {
-      window.clearInterval(id);
-    };
-  }, [load]);
+  return () => {
+    window.clearInterval(id);
+  };
+}, [load]);
 
 
   async function markRead(ids?: string[]) {

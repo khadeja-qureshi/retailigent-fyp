@@ -49,8 +49,10 @@ export default function ReservationsPage() {
   }
 
   useEffect(() => {
-    loadReservations();
-  }, []);
+  queueMicrotask(() => {
+    void loadReservations();
+  });
+}, []);
 
   async function findBranches() {
     try {
