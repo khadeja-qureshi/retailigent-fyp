@@ -26,6 +26,11 @@ from app.api.v1.notifications import (
     router as notifications_router,
 )
 
+from app.api.v1.memory import (
+    router as memory_router,
+)
+
+
 
 
 import asyncio
@@ -127,6 +132,10 @@ from app.api.v1.chat import (
 
 app.include_router(
     chat_router
+)
+
+app.include_router(
+    memory_router
 )
 
 @app.get("/")

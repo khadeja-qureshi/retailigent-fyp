@@ -1006,6 +1006,62 @@ def _clarification_for(
     )
 
 
+def _reliable_memory_value(
+    customer_context: dict | None,
+    memory_key: str,
+    *,
+    minimum_confidence: float = 0.70,
+):
+    if not customer_context:
+        return None
+
+    remembered_facts = (
+        customer_context.get(
+            "remembered_facts"
+        )
+        or []
+    )
+
+    for fact in remembered_facts:
+        if (
+            fact.get("memory_key")
+            != memory_key
+        ):
+            continue
+
+        try:
+            confidence = float(
+                fact.get(
+                    "effective_confidence"
+                )
+                if fact.get(
+                    "effective_confidence"
+                )
+                is not None
+                else fact.get(
+                    "confidence",
+                    0.0,
+                )
+            )
+        except (
+            TypeError,
+            ValueError,
+        ):
+            confidence = 0.0
+
+        if (
+            confidence
+            < minimum_confidence
+        ):
+            continue
+
+        return fact.get(
+            "memory_value"
+        )
+
+    return None
+
+
 # ============================================================================
 # Customer Interaction Agent
 # ============================================================================
@@ -1027,18 +1083,66 @@ class CustomerInteractionAgent:
     def parse(
         self,
         message: str,
+        *,
+        customer_context: dict | None = None,
     ) -> ParsedCustomerMessage:
         raw_message = message.strip()
 
-        language = detect_language(raw_message)
-        intent = classify_intent(raw_message)
+        language = detect_language(
+            raw_message
+        )
+
+        intent = classify_intent(
+            raw_message
+        )
 
         entities = extract_entities(
             raw_message,
             intent=intent,
         )
 
-        text = _normalize(raw_message)
+        context_used: dict = {}
+
+        if (
+            intent == "product_search"
+            and entities.size is None
+        ):
+            remembered_size = (
+                _reliable_memory_value(
+                    customer_context,
+                    "usual_size",
+                )
+            )
+
+            if isinstance(
+                remembered_size,
+                str,
+            ):
+                normalized_size = (
+                    SIZE_ALIASES.get(
+                        remembered_size
+                        .strip()
+                        .lower()
+                    )
+                )
+
+                if normalized_size:
+                    entities = (
+                        entities.model_copy(
+                            update={
+                                "size":
+                                    normalized_size,
+                            }
+                        )
+                    )
+
+                    context_used[
+                        "usual_size"
+                    ] = normalized_size
+
+        text = _normalize(
+            raw_message
+        )
 
         (
             requires_clarification,
@@ -1054,8 +1158,13 @@ class CustomerInteractionAgent:
             language=language,
             intent=intent,
             entities=entities,
-            requires_clarification=requires_clarification,
-            clarification_question=clarification_question,
+            context_used=context_used,
+            requires_clarification=(
+                requires_clarification
+            ),
+            clarification_question=(
+                clarification_question
+            ),
         )
 
     def compose_generic_clarification(
@@ -1077,6 +1186,10 @@ class CustomerInteractionAgent:
         self,
         language: str,
         count: int,
+        *,
+        remembered_size: (
+            str | None
+        ) = None,
     ) -> str:
         if count == 0:
             if language in {
@@ -1091,6 +1204,27 @@ class CustomerInteractionAgent:
             return (
                 "I couldn't find any "
                 "matching products."
+            )
+
+        if remembered_size:
+            if language in {
+                "roman_urdu",
+                "mixed",
+            }:
+                return (
+                    f"Mujhe {count} matching "
+                    f"products aap ke yaad "
+                    f"rakhe hue size "
+                    f"{remembered_size} mein "
+                    f"milay hain."
+                )
+
+            return (
+                f"I found {count} matching "
+                f"product"
+                f"{'s' if count != 1 else ''} "
+                f"in your remembered size "
+                f"{remembered_size}."
             )
 
         if language == "roman_urdu":
@@ -1350,9 +1484,7 @@ class CustomerInteractionAgent:
         result: dict,
     ) -> str:
         if result.get("success") is True:
-            order_id = result.get(
-                "order_id"
-            )
+            order_id = result.get("order_id")
 
             if language in {
                 "roman_urdu",
@@ -1371,8 +1503,7 @@ class CustomerInteractionAgent:
 
         reason = (
             result.get("reason")
-            or
-            "The purchase could not be completed."
+            or "The purchase could not be completed."
         )
 
         if language in {

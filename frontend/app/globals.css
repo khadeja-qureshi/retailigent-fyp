@@ -1,26 +1,1261 @@
 @import "tailwindcss";
 
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /*
+   * Retailigent brand palette
+   *
+   * Approximate digital colours sampled from
+   * the Black Sea / Blueberry Pie /
+   * Cherry Tomato reference palette.
+   */
+
+  --ri-black-sea: #332e34;
+
+  --ri-black-sea-soft:
+    #484149;
+
+  --ri-blueberry:
+    #7779de;
+
+  --ri-blueberry-dark:
+    #5f62c7;
+
+  --ri-blueberry-soft:
+    #eeedfb;
+
+  --ri-cherry:
+    #f54631;
+
+  --ri-cherry-dark:
+    #d83a29;
+
+  --ri-cherry-soft:
+    #ffebe7;
+
+  --ri-background:
+    #f7f4f1;
+
+  --ri-background-alt:
+    #f1eeec;
+
+  --ri-surface:
+    #ffffff;
+
+  --ri-surface-soft:
+    #fbfaf9;
+
+  --ri-ink:
+    #332e34;
+
+  --ri-muted:
+    #716a73;
+
+  --ri-muted-light:
+    #9a929b;
+
+  --ri-border:
+    #e4dfe2;
+
+  --ri-border-strong:
+    #d3cdd1;
+
+  --ri-success:
+    #2e7654;
+
+  --ri-success-soft:
+    #edf8f1;
+
+  --ri-warning:
+    #95651d;
+
+  --ri-warning-soft:
+    #fff6df;
+
+  --ri-danger:
+    #b4382d;
+
+  --ri-danger-soft:
+    #fff0ed;
+
+  --background:
+    var(--ri-background);
+
+  --foreground:
+    var(--ri-ink);
 }
+
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-background:
+    var(--background);
+
+  --color-foreground:
+    var(--foreground);
+
+  --font-sans:
+    var(--font-geist-sans);
+
+  --font-mono:
+    var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+
+* {
+  box-sizing:
+    border-box;
 }
+
+
+html {
+  min-height:
+    100%;
+
+  background:
+    var(--ri-background);
+
+  scroll-behavior:
+    smooth;
+}
+
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  min-height:
+    100vh;
+
+  margin:
+    0;
+
+  color:
+    var(--ri-ink);
+
+  background:
+    radial-gradient(
+      circle at 12% 0%,
+      rgba(
+        119,
+        121,
+        222,
+        0.13
+      ),
+      transparent 32rem
+    ),
+    radial-gradient(
+      circle at 88% 10%,
+      rgba(
+        245,
+        70,
+        49,
+        0.08
+      ),
+      transparent 27rem
+    ),
+    var(--ri-background);
+
+  font-family:
+    var(--font-geist-sans),
+    Arial,
+    Helvetica,
+    sans-serif;
+
+  -webkit-font-smoothing:
+    antialiased;
+}
+
+
+h1,
+h2,
+h3,
+.ri-display {
+  font-family:
+    "Iowan Old Style",
+    Baskerville,
+    "Palatino Linotype",
+    "Book Antiqua",
+    Georgia,
+    serif;
+
+  letter-spacing:
+    -0.025em;
+}
+
+
+button,
+a,
+input,
+textarea,
+select {
+  font:
+    inherit;
+}
+
+
+button,
+a {
+  -webkit-tap-highlight-color:
+    transparent;
+}
+
+
+button {
+  cursor:
+    pointer;
+}
+
+
+button:disabled {
+  cursor:
+    not-allowed;
+}
+
+
+::selection {
+  color:
+    white;
+
+  background:
+    var(--ri-blueberry);
+}
+
+
+/* ============================================================
+ * Nice shared interactions
+ * ============================================================ */
+
+
+.ri-card {
+  border:
+    1px solid
+    var(--ri-border);
+
+  border-radius:
+    1.5rem;
+
+  background:
+    rgba(
+      255,
+      255,
+      255,
+      0.92
+    );
+
+  box-shadow:
+    0 18px 50px
+    rgba(
+      51,
+      46,
+      52,
+      0.07
+    );
+}
+
+
+.ri-button-primary {
+  border-radius:
+    0.9rem;
+
+  background:
+    var(--ri-blueberry);
+
+  color:
+    white;
+
+  box-shadow:
+    0 10px 25px
+    rgba(
+      119,
+      121,
+      222,
+      0.24
+    );
+
+  transition:
+    transform 150ms ease,
+    box-shadow 150ms ease,
+    background 150ms ease;
+}
+
+
+.ri-button-primary:hover {
+  transform:
+    translateY(-1px);
+
+  background:
+    var(--ri-blueberry-dark);
+
+  box-shadow:
+    0 14px 30px
+    rgba(
+      119,
+      121,
+      222,
+      0.30
+    );
+}
+
+
+.ri-button-accent {
+  border-radius:
+    0.9rem;
+
+  background:
+    var(--ri-cherry);
+
+  color:
+    white;
+
+  transition:
+    transform 150ms ease,
+    background 150ms ease;
+}
+
+
+.ri-button-accent:hover {
+  transform:
+    translateY(-1px);
+
+  background:
+    var(--ri-cherry-dark);
+}
+
+
+/* ============================================================
+ * Convert the original Phase 6-11 dark pages to the
+ * new Retailigent brand automatically.
+ *
+ * This covers:
+ * Cart
+ * Wishlist
+ * Reservations
+ * Orders
+ * Smart Cart
+ * Alerts
+ * Notifications
+ * Login
+ * Existing chat blocks
+ * ============================================================ */
+
+
+.bg-neutral-950 {
+  color:
+    var(--ri-ink)
+    !important;
+
+  background-color:
+    var(--ri-surface-soft)
+    !important;
+}
+
+
+.bg-neutral-900 {
+  color:
+    var(--ri-ink)
+    !important;
+
+  background-color:
+    var(--ri-surface)
+    !important;
+
+  box-shadow:
+    0 14px 35px
+    rgba(
+      51,
+      46,
+      52,
+      0.06
+    );
+}
+
+
+.bg-neutral-800 {
+  color:
+    var(--ri-ink)
+    !important;
+
+  background-color:
+    var(--ri-blueberry-soft)
+    !important;
+}
+
+
+.border-neutral-800,
+.border-neutral-700 {
+  border-color:
+    var(--ri-border)
+    !important;
+}
+
+
+.text-neutral-300 {
+  color:
+    #565057
+    !important;
+}
+
+
+.text-neutral-400 {
+  color:
+    var(--ri-muted)
+    !important;
+}
+
+
+.text-neutral-500,
+.text-neutral-600 {
+  color:
+    var(--ri-muted-light)
+    !important;
+}
+
+
+main.bg-neutral-950 {
+  min-height:
+    calc(
+      100vh - 3.5rem
+    );
+
+  color:
+    var(--ri-ink)
+    !important;
+
+  background:
+    transparent
+    !important;
+}
+
+
+main.bg-neutral-950
+> .mx-auto {
+  max-width:
+    72rem
+    !important;
+
+  padding-top:
+    3rem
+    !important;
+
+  padding-bottom:
+    4rem
+    !important;
+}
+
+
+main.bg-neutral-950
+h1 {
+  color:
+    var(--ri-black-sea);
+
+  font-size:
+    clamp(
+      2rem,
+      4vw,
+      3.2rem
+    );
+
+  line-height:
+    1.05;
+}
+
+
+main.bg-neutral-950
+a.underline {
+  color:
+    var(--ri-blueberry);
+
+  text-decoration:
+    none
+    !important;
+
+  font-weight:
+    600;
+}
+
+
+main.bg-neutral-950
+a.underline:hover {
+  color:
+    var(--ri-blueberry-dark);
+}
+
+
+main.bg-neutral-950
+input,
+main.bg-neutral-950
+textarea,
+main.bg-neutral-950
+select {
+  color:
+    var(--ri-ink)
+    !important;
+
+  background:
+    var(--ri-surface)
+    !important;
+
+  border-color:
+    var(--ri-border-strong)
+    !important;
+
+  outline:
+    none;
+
+  transition:
+    border-color 150ms ease,
+    box-shadow 150ms ease;
+}
+
+
+main.bg-neutral-950
+input:focus,
+main.bg-neutral-950
+textarea:focus,
+main.bg-neutral-950
+select:focus {
+  border-color:
+    var(--ri-blueberry)
+    !important;
+
+  box-shadow:
+    0 0 0 3px
+    rgba(
+      119,
+      121,
+      222,
+      0.13
+    );
+}
+
+
+main.bg-neutral-950
+button.bg-white {
+  color:
+    white
+    !important;
+
+  background:
+    var(--ri-cherry)
+    !important;
+
+  box-shadow:
+    0 9px 20px
+    rgba(
+      245,
+      70,
+      49,
+      0.20
+    );
+
+  transition:
+    transform 150ms ease,
+    background 150ms ease;
+}
+
+
+main.bg-neutral-950
+button.bg-white:hover {
+  transform:
+    translateY(-1px);
+
+  background:
+    var(--ri-cherry-dark)
+    !important;
+}
+
+
+[class*="hover:bg-neutral-800"]:hover {
+  background:
+    var(--ri-blueberry-soft)
+    !important;
+}
+
+
+[class*="focus:border-neutral-500"]:focus {
+  border-color:
+    var(--ri-blueberry)
+    !important;
+}
+
+
+/* ============================================================
+ * Status colours
+ * ============================================================ */
+
+
+[class*="bg-green-950"] {
+  background:
+    var(--ri-success-soft)
+    !important;
+}
+
+
+[class*="border-green-900"] {
+  border-color:
+    #b9dec9
+    !important;
+}
+
+
+.text-green-300,
+.text-green-400 {
+  color:
+    var(--ri-success)
+    !important;
+}
+
+
+[class*="bg-amber-950"] {
+  background:
+    var(--ri-warning-soft)
+    !important;
+}
+
+
+[class*="border-amber-900"] {
+  border-color:
+    #ead19f
+    !important;
+}
+
+
+.text-amber-200,
+.text-amber-300,
+.text-amber-400 {
+  color:
+    var(--ri-warning)
+    !important;
+}
+
+
+[class*="bg-red-950"] {
+  background:
+    var(--ri-danger-soft)
+    !important;
+}
+
+
+[class*="border-red-900"] {
+  border-color:
+    #ecb6af
+    !important;
+}
+
+
+.text-red-300,
+.text-red-400 {
+  color:
+    var(--ri-danger)
+    !important;
+}
+
+
+/* ============================================================
+ * Convert the first Phase 12 burgundy palette to the
+ * new Black Sea / Blueberry / Cherry palette.
+ *
+ * This means your existing Chat and Profile components
+ * do not need another giant rewrite.
+ * ============================================================ */
+
+
+[class*="bg-[#7f2a3c]"] {
+  background-color:
+    var(--ri-black-sea)
+    !important;
+}
+
+
+[class*="bg-[#ce4d42]"] {
+  background-color:
+    var(--ri-cherry)
+    !important;
+}
+
+
+[class*="hover:bg-[#ad3d34]"]:hover {
+  background-color:
+    var(--ri-cherry-dark)
+    !important;
+}
+
+
+[class*="text-[#7f2a3c]"] {
+  color:
+    var(--ri-blueberry-dark)
+    !important;
+}
+
+
+[class*="border-[#7f2a3c]"] {
+  border-color:
+    var(--ri-blueberry)
+    !important;
+}
+
+
+[class*="bg-[#f1e6de]"] {
+  background-color:
+    var(--ri-background)
+    !important;
+}
+
+
+[class*="bg-[#fffaf7]"] {
+  background-color:
+    var(--ri-surface)
+    !important;
+}
+
+
+[class*="text-[#2c1c20]"] {
+  color:
+    var(--ri-ink)
+    !important;
+}
+
+
+[class*="text-[#756369]"],
+[class*="text-[#8c777c]"],
+[class*="text-[#a28e93]"],
+[class*="text-[#ad999e]"] {
+  color:
+    var(--ri-muted)
+    !important;
+}
+
+
+[class*="border-[#dccbc4]"],
+[class*="border-[#d4c0b8]"] {
+  border-color:
+    var(--ri-border)
+    !important;
+}
+
+
+[class*="bg-[#f7ece7]"],
+[class*="bg-[#f4ded8]"] {
+  background-color:
+    var(--ri-blueberry-soft)
+    !important;
+}
+
+
+[class*="text-[#674f56]"],
+[class*="text-[#5d484e]"] {
+  color:
+    var(--ri-muted)
+    !important;
+}
+
+
+[class*="border-[#ce4d42]"] {
+  border-color:
+    var(--ri-cherry)
+    !important;
+}
+
+
+[class*="text-[#a53d35]"] {
+  color:
+    var(--ri-cherry-dark)
+    !important;
+}
+
+
+/* ============================================================
+ * Scrollbar
+ * ============================================================ */
+
+
+* {
+  scrollbar-width:
+    thin;
+
+  scrollbar-color:
+    #b9b5dc
+    transparent;
+}
+
+
+::-webkit-scrollbar {
+  width:
+    9px;
+
+  height:
+    9px;
+}
+
+
+::-webkit-scrollbar-track {
+  background:
+    transparent;
+}
+
+
+::-webkit-scrollbar-thumb {
+  border:
+    2px solid
+    transparent;
+
+  border-radius:
+    999px;
+
+  background:
+    #b9b5dc;
+
+  background-clip:
+    padding-box;
+}
+/* ============================================================
+ * Legacy dark page shells
+ *
+ * Orders / Smart Cart / Alerts still use bg-black + text-white
+ * on their outer <main>. Convert those pages into the new
+ * Retailigent light theme without touching their business logic.
+ * ============================================================ */
+
+
+main.bg-black {
+  min-height:
+    calc(
+      100vh - 4rem
+    ) !important;
+
+  color:
+    var(--ri-ink) !important;
+
+  background:
+    radial-gradient(
+      circle at 8% 0%,
+      rgba(
+        119,
+        121,
+        222,
+        0.10
+      ),
+      transparent 27rem
+    ),
+    radial-gradient(
+      circle at 95% 12%,
+      rgba(
+        245,
+        70,
+        49,
+        0.07
+      ),
+      transparent 24rem
+    ),
+    var(--ri-background)
+    !important;
+}
+
+
+main.bg-black.text-white {
+  color:
+    var(--ri-ink)
+    !important;
+}
+
+
+main.bg-black
+> .mx-auto {
+  padding-top:
+    0.5rem;
+
+  padding-bottom:
+    2rem;
+}
+
+
+/* Page headings */
+
+main.bg-black h1,
+main.bg-black h2,
+main.bg-black h3 {
+  color:
+    var(--ri-black-sea)
+    !important;
+}
+
+
+main.bg-black h1 {
+  font-size:
+    clamp(
+      2.25rem,
+      4vw,
+      3.5rem
+    );
+
+  line-height:
+    1.05;
+
+  letter-spacing:
+    -0.035em;
+}
+
+
+/* Top helper navigation */
+
+main.bg-black
+nav a {
+  color:
+    var(--ri-blueberry-dark)
+    !important;
+
+  text-decoration:
+    none
+    !important;
+
+  font-weight:
+    600;
+
+  transition:
+    color 150ms ease;
+}
+
+
+main.bg-black
+nav a:hover {
+  color:
+    var(--ri-cherry)
+    !important;
+}
+
+
+/* Main cards */
+
+main.bg-black
+.bg-neutral-900 {
+  color:
+    var(--ri-ink)
+    !important;
+
+  background:
+    rgba(
+      255,
+      255,
+      255,
+      0.94
+    )
+    !important;
+
+  border-color:
+    var(--ri-border)
+    !important;
+
+  box-shadow:
+    0 18px 45px
+    rgba(
+      51,
+      46,
+      52,
+      0.07
+    );
+}
+
+
+/* Nested cards / fields */
+
+main.bg-black
+.bg-neutral-950 {
+  color:
+    var(--ri-ink)
+    !important;
+
+  background:
+    var(--ri-surface-soft)
+    !important;
+
+  border-color:
+    var(--ri-border)
+    !important;
+}
+
+
+main.bg-black
+.border-neutral-800,
+main.bg-black
+.border-neutral-700 {
+  border-color:
+    var(--ri-border)
+    !important;
+}
+
+
+/* Text */
+
+main.bg-black
+.text-neutral-300 {
+  color:
+    #59525a
+    !important;
+}
+
+
+main.bg-black
+.text-neutral-400 {
+  color:
+    var(--ri-muted)
+    !important;
+}
+
+
+main.bg-black
+.text-neutral-500 {
+  color:
+    var(--ri-muted-light)
+    !important;
+}
+
+
+/* Form controls */
+
+main.bg-black
+input,
+main.bg-black
+select,
+main.bg-black
+textarea {
+  color:
+    var(--ri-ink)
+    !important;
+
+  background:
+    white
+    !important;
+
+  border-color:
+    var(--ri-border-strong)
+    !important;
+
+  box-shadow:
+    inset 0 1px 1px
+    rgba(
+      51,
+      46,
+      52,
+      0.03
+    );
+
+  transition:
+    border-color 150ms ease,
+    box-shadow 150ms ease;
+}
+
+
+main.bg-black
+input:focus,
+main.bg-black
+select:focus,
+main.bg-black
+textarea:focus {
+  border-color:
+    var(--ri-blueberry)
+    !important;
+
+  box-shadow:
+    0 0 0 3px
+    rgba(
+      119,
+      121,
+      222,
+      0.12
+    );
+}
+
+
+/* Main create buttons */
+
+main.bg-black
+button.bg-white {
+  color:
+    white
+    !important;
+
+  background:
+    var(--ri-cherry)
+    !important;
+
+  border:
+    0;
+
+  border-radius:
+    0.85rem;
+
+  box-shadow:
+    0 10px 22px
+    rgba(
+      245,
+      70,
+      49,
+      0.20
+    );
+
+  transition:
+    transform 150ms ease,
+    background 150ms ease,
+    box-shadow 150ms ease;
+}
+
+
+main.bg-black
+button.bg-white:hover {
+  color:
+    white
+    !important;
+
+  background:
+    var(--ri-cherry-dark)
+    !important;
+
+  transform:
+    translateY(-1px);
+
+  box-shadow:
+    0 13px 26px
+    rgba(
+      245,
+      70,
+      49,
+      0.24
+    );
+}
+
+
+/* Secondary action buttons */
+
+main.bg-black
+button.border-neutral-700 {
+  color:
+    var(--ri-black-sea)
+    !important;
+
+  background:
+    white;
+
+  border-color:
+    var(--ri-border-strong)
+    !important;
+
+  transition:
+    background 150ms ease,
+    border-color 150ms ease,
+    color 150ms ease;
+}
+
+
+main.bg-black
+button.border-neutral-700:hover {
+  color:
+    var(--ri-blueberry-dark)
+    !important;
+
+  background:
+    var(--ri-blueberry-soft)
+    !important;
+
+  border-color:
+    rgba(
+      119,
+      121,
+      222,
+      0.45
+    )
+    !important;
+}
+
+
+/* Destructive buttons */
+
+main.bg-black
+button.border-red-900 {
+  color:
+    var(--ri-danger)
+    !important;
+
+  background:
+    white;
+
+  border-color:
+    #efbbb5
+    !important;
+}
+
+
+main.bg-black
+button.border-red-900:hover {
+  background:
+    var(--ri-danger-soft)
+    !important;
+}
+
+
+/* Informational states */
+
+main.bg-black
+.bg-amber-950\/20,
+main.bg-black
+.bg-amber-950\/30 {
+  color:
+    var(--ri-warning)
+    !important;
+
+  background:
+    var(--ri-warning-soft)
+    !important;
+
+  border-color:
+    #ead19f
+    !important;
+}
+
+
+main.bg-black
+.bg-green-950\/30 {
+  color:
+    var(--ri-success)
+    !important;
+
+  background:
+    var(--ri-success-soft)
+    !important;
+
+  border-color:
+    #b9dec9
+    !important;
+}
+
+
+main.bg-black
+.bg-red-950\/30 {
+  color:
+    var(--ri-danger)
+    !important;
+
+  background:
+    var(--ri-danger-soft)
+    !important;
+
+  border-color:
+    #ecb6af
+    !important;
+}
+
+
+/* Make the primary content area feel less like
+ * an old admin dashboard.
+ */
+
+main.bg-black
+section.rounded-2xl {
+  border-radius:
+    1.5rem
+    !important;
+}
+
+
+main.bg-black
+.rounded-xl {
+  border-radius:
+    1rem
+    !important;
 }

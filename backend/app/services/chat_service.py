@@ -299,7 +299,132 @@ def update_conversation_language(
 
     return rows[0]
 
+def list_customer_conversations(
+    customer_id: str,
+    *,
+    limit: int = 30,
+) -> list[dict]:
+    """
+    Return the customer's recent conversations,
+    newest activity first.
+    """
 
+    safe_limit = max(
+        1,
+        min(limit, 100),
+    )
+
+    response = (
+        supabase_admin
+        .table("conversations")
+        .select(
+            "id, title, language, "
+            "created_at, updated_at"
+        )
+        .eq(
+            "customer_id",
+            customer_id,
+        )
+        .order(
+            "updated_at",
+            desc=True,
+        )
+        .limit(
+            safe_limit
+        )
+        .execute()
+    )
+
+    return response.data or []
+
+
+def get_conversation_history(
+    customer_id: str,
+    conversation_id: str,
+    *,
+    limit: int = 100,
+) -> dict:
+    """
+    Return one owned conversation together with
+    customer/assistant messages suitable for
+    reopening in the chat UI.
+    """
+
+    conversation = (
+        get_owned_conversation(
+            customer_id,
+            conversation_id,
+        )
+    )
+
+    messages = (
+        list_recent_messages(
+            customer_id,
+            conversation_id,
+            limit=limit,
+        )
+    )
+
+    visible_messages: list[dict] = []
+
+    for message in messages:
+        role = message.get("role")
+
+        if role not in {
+            "user",
+            "assistant",
+        }:
+            continue
+
+        metadata = (
+            message.get("metadata")
+            or {}
+        )
+
+        blocks = (
+            metadata.get("blocks")
+            or []
+        )
+
+        if not isinstance(
+            blocks,
+            list,
+        ):
+            blocks = []
+
+        visible_messages.append(
+            {
+                "id":
+                    str(message["id"]),
+                "role":
+                    role,
+                "content":
+                    message.get("content")
+                    or "",
+                "language": (
+                    metadata.get(
+                        "language"
+                    )
+                    or conversation.get(
+                        "language"
+                    )
+                    or "english"
+                ),
+                "blocks":
+                    blocks,
+                "created_at":
+                    message.get(
+                        "created_at"
+                    ),
+            }
+        )
+
+    return {
+        "conversation":
+            conversation,
+        "messages":
+            visible_messages,
+    }
 # ============================================================================
 # Messages
 # ============================================================================

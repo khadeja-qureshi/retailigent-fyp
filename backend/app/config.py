@@ -27,6 +27,16 @@ class Settings(BaseSettings):
     notification_backoff_seconds: int = 30
     notification_stale_processing_seconds: int = 300
 
+    # Phase 12 - Cross-conversation memory
+    memory_stale_days: int = 90
+    memory_stale_confidence_multiplier: float = 0.5
+
+    # Local Ollama LLM
+    ollama_url: str = "http://localhost:11434"
+    ollama_llm_model: str = "qwen3:1.7b"
+    ollama_llm_timeout_seconds: float = 60.0
+    ollama_keep_alive: str = "30m"
+
     # email_backend: "log" (dev, logs the email) or "smtp"
     email_backend: str = "log"
     smtp_host: str = ""

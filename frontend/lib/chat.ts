@@ -1,68 +1,189 @@
-import { supabase } from "@/lib/supabase/client";
+import {
+  supabase,
+} from "@/lib/supabase/client";
 
 import type {
   ChatStreamEvent,
+  ConversationHistoryResponse,
+  ConversationListResponse,
 } from "@/lib/chat-types";
 
 
 const API_URL =
-  process.env.NEXT_PUBLIC_API_URL ??
+  process.env
+    .NEXT_PUBLIC_API_URL
+  ??
   "http://127.0.0.1:8000";
 
 
 interface StreamChatOptions {
   message: string;
 
-  conversationId?: string | null;
+  conversationId?:
+    | string
+    | null;
 
-  signal?: AbortSignal;
+  signal?:
+    AbortSignal;
 
   onEvent: (
-    event: ChatStreamEvent
+    event:
+      ChatStreamEvent
   ) => void;
+}
+
+
+async function getAccessToken():
+Promise<string> {
+  const {
+    data: {
+      session,
+    },
+  } =
+    await supabase
+      .auth
+      .getSession();
+
+  if (
+    !session
+      ?.access_token
+  ) {
+    throw new Error(
+      "You must sign in before using chat."
+    );
+  }
+
+  return (
+    session.access_token
+  );
+}
+
+
+async function authenticatedJson<T>(
+  path: string,
+  options:
+    RequestInit = {}
+): Promise<T> {
+  const token =
+    await getAccessToken();
+
+  const response =
+    await fetch(
+      `${API_URL}${path}`,
+      {
+        ...options,
+
+        headers: {
+          "Content-Type":
+            "application/json",
+
+          Authorization:
+            `Bearer ${token}`,
+
+          ...(
+            options.headers
+            ?? {}
+          ),
+        },
+      }
+    );
+
+  if (!response.ok) {
+    let detail =
+      "Request failed.";
+
+    try {
+      const payload =
+        await response.json();
+
+      if (
+        payload
+        &&
+        typeof payload.detail
+          === "string"
+      ) {
+        detail =
+          payload.detail;
+      }
+    } catch {
+      // Keep generic error.
+    }
+
+    throw new Error(
+      detail
+    );
+  }
+
+  return (
+    await response.json()
+  ) as T;
 }
 
 
 function parseSseFrame(
   frame: string
 ): ChatStreamEvent | null {
-  const lines = frame.split("\n");
+  const lines =
+    frame.split("\n");
 
-  let event = "message";
+  let event =
+    "message";
 
-  const dataLines: string[] = [];
+  const dataLines:
+    string[] = [];
 
-  for (const rawLine of lines) {
-    const line = rawLine.replace(
-      /\r$/,
-      ""
-    );
+  for (
+    const rawLine
+    of lines
+  ) {
+    const line =
+      rawLine.replace(
+        /\r$/,
+        ""
+      );
 
     if (
-      !line ||
+      !line
+      ||
       line.startsWith(":")
     ) {
       continue;
     }
 
-    if (line.startsWith("event:")) {
-      event = line
-        .slice("event:".length)
-        .trim();
+    if (
+      line.startsWith(
+        "event:"
+      )
+    ) {
+      event =
+        line
+          .slice(
+            "event:".length
+          )
+          .trim();
 
       continue;
     }
 
-    if (line.startsWith("data:")) {
+    if (
+      line.startsWith(
+        "data:"
+      )
+    ) {
       dataLines.push(
         line
-          .slice("data:".length)
+          .slice(
+            "data:".length
+          )
           .trimStart()
       );
     }
   }
 
-  if (dataLines.length === 0) {
+  if (
+    dataLines.length
+    === 0
+  ) {
     return null;
   }
 
@@ -72,9 +193,13 @@ function parseSseFrame(
   let data: unknown;
 
   try {
-    data = JSON.parse(rawData);
+    data =
+      JSON.parse(
+        rawData
+      );
   } catch {
-    data = rawData;
+    data =
+      rawData;
   }
 
   return {
@@ -84,47 +209,87 @@ function parseSseFrame(
 }
 
 
+export async function listConversations():
+Promise<ConversationListResponse> {
+  return authenticatedJson<
+    ConversationListResponse
+  >(
+    "/api/v1/chat/conversations"
+  );
+}
+
+
+export async function getConversationHistory(
+  conversationId: string
+): Promise<ConversationHistoryResponse> {
+  return authenticatedJson<
+    ConversationHistoryResponse
+  >(
+    "/api/v1/chat/conversations/"
+    + encodeURIComponent(
+      conversationId
+    )
+  );
+}
+
+
+export async function finalizeConversation(
+  conversationId: string
+): Promise<void> {
+  await authenticatedJson<{
+    conversation_id: string;
+    memory_saved: number;
+    memories: unknown[];
+  }>(
+    "/api/v1/chat/"
+    + encodeURIComponent(
+      conversationId
+    )
+    + "/finalize",
+    {
+      method: "POST",
+    }
+  );
+}
+
+
 export async function streamChat({
   message,
   conversationId,
   signal,
   onEvent,
-}: StreamChatOptions): Promise<void> {
-  const {
-    data: {
-      session,
-    },
-  } = await supabase.auth.getSession();
+}: StreamChatOptions):
+Promise<void> {
+  const token =
+    await getAccessToken();
 
-  if (!session?.access_token) {
-    throw new Error(
-      "You must sign in before using chat."
+  const response =
+    await fetch(
+      `${API_URL}/api/v1/chat`,
+      {
+        method:
+          "POST",
+
+        headers: {
+          "Content-Type":
+            "application/json",
+
+          Authorization:
+            `Bearer ${token}`,
+        },
+
+        body:
+          JSON.stringify({
+            message,
+
+            conversation_id:
+              conversationId
+              ?? null,
+          }),
+
+        signal,
+      }
     );
-  }
-
-  const response = await fetch(
-    `${API_URL}/api/v1/chat`,
-    {
-      method: "POST",
-
-      headers: {
-        "Content-Type":
-          "application/json",
-
-        Authorization:
-          `Bearer ${session.access_token}`,
-      },
-
-      body: JSON.stringify({
-        message,
-
-        conversation_id:
-          conversationId ?? null,
-      }),
-
-      signal,
-    }
-  );
 
   if (!response.ok) {
     let detail =
@@ -135,17 +300,21 @@ export async function streamChat({
         await response.json();
 
       if (
-        payload &&
+        payload
+        &&
         typeof payload.detail
           === "string"
       ) {
-        detail = payload.detail;
+        detail =
+          payload.detail;
       }
     } catch {
-      // Keep generic message.
+      // Keep generic error.
     }
 
-    throw new Error(detail);
+    throw new Error(
+      detail
+    );
   }
 
   if (!response.body) {
@@ -155,10 +324,13 @@ export async function streamChat({
   }
 
   const reader =
-    response.body.getReader();
+    response.body
+      .getReader();
 
   const decoder =
-    new TextDecoder("utf-8");
+    new TextDecoder(
+      "utf-8"
+    );
 
   let buffer = "";
 
@@ -167,29 +339,35 @@ export async function streamChat({
       const {
         value,
         done,
-      } = await reader.read();
+      } =
+        await reader.read();
 
       if (done) {
         break;
       }
 
-      buffer += decoder.decode(
-        value,
-        {
-          stream: true,
-        }
-      );
+      buffer +=
+        decoder.decode(
+          value,
+          {
+            stream: true,
+          }
+        );
 
-      buffer = buffer.replace(
-        /\r\n/g,
-        "\n"
-      );
+      buffer =
+        buffer.replace(
+          /\r\n/g,
+          "\n"
+        );
 
       let separatorIndex =
-        buffer.indexOf("\n\n");
+        buffer.indexOf(
+          "\n\n"
+        );
 
       while (
-        separatorIndex !== -1
+        separatorIndex
+        !== -1
       ) {
         const frame =
           buffer.slice(
@@ -197,23 +375,32 @@ export async function streamChat({
             separatorIndex
           );
 
-        buffer = buffer.slice(
-          separatorIndex + 2
-        );
+        buffer =
+          buffer.slice(
+            separatorIndex
+            + 2
+          );
 
         const parsed =
-          parseSseFrame(frame);
+          parseSseFrame(
+            frame
+          );
 
         if (parsed) {
-          onEvent(parsed);
+          onEvent(
+            parsed
+          );
         }
 
         separatorIndex =
-          buffer.indexOf("\n\n");
+          buffer.indexOf(
+            "\n\n"
+          );
       }
     }
 
-    buffer += decoder.decode();
+    buffer +=
+      decoder.decode();
 
     const finalFrame =
       buffer.trim();
@@ -225,7 +412,9 @@ export async function streamChat({
         );
 
       if (parsed) {
-        onEvent(parsed);
+        onEvent(
+          parsed
+        );
       }
     }
   } finally {

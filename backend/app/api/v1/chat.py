@@ -8,6 +8,7 @@ from typing import Any
 from fastapi import (
     APIRouter,
     Depends,
+    Query,
 )
 from fastapi.responses import (
     StreamingResponse,
@@ -16,6 +17,9 @@ from starlette.concurrency import (
     run_in_threadpool,
 )
 
+from app.agents.memory_agent import (
+    memory_agent,
+)
 from app.agents.orchestrator_agent import (
     orchestrator_agent,
 )
@@ -26,6 +30,7 @@ from app.core.auth import (
 from app.schemas.chat import (
     ChatRequest,
 )
+from app.services import chat_service
 
 
 logger = logging.getLogger(
@@ -43,13 +48,6 @@ def _sse_event(
     event: str,
     data: Any,
 ) -> str:
-    """
-    Encode one Server-Sent Event.
-
-    JSON encoding ensures embedded newlines in
-    assistant content do not break the SSE frame.
-    """
-
     payload = json.dumps(
         data,
         ensure_ascii=False,
@@ -66,15 +64,6 @@ def _text_chunks(
     text: str,
     chunk_size: int = 80,
 ) -> Iterator[str]:
-    """
-    Split final assistant text into small chunks
-    for the frontend streaming experience.
-
-    The agent currently completes its deterministic
-    orchestration first, then the completed response
-    is streamed to the client.
-    """
-
     if not text:
         return
 
@@ -91,6 +80,103 @@ def _text_chunks(
         start = end
 
 
+@router.get(
+    "/conversations"
+)
+def list_conversations(
+    limit: int = Query(
+        default=30,
+        ge=1,
+        le=100,
+    ),
+    customer_id: str = Depends(
+        get_current_user_id
+    ),
+    _customer_role: str = Depends(
+        require_customer
+    ),
+) -> dict:
+    """
+    Return recent chat conversations belonging
+    to the authenticated customer.
+    """
+
+    conversations = (
+        chat_service
+        .list_customer_conversations(
+            customer_id,
+            limit=limit,
+        )
+    )
+
+    return {
+        "conversations":
+            conversations,
+    }
+
+
+@router.get(
+    "/conversations/{conversation_id}"
+)
+def get_conversation(
+    conversation_id: str,
+    customer_id: str = Depends(
+        get_current_user_id
+    ),
+    _customer_role: str = Depends(
+        require_customer
+    ),
+) -> dict:
+    """
+    Reopen an existing owned conversation.
+    """
+
+    return (
+        chat_service
+        .get_conversation_history(
+            customer_id,
+            conversation_id,
+            limit=100,
+        )
+    )
+
+
+@router.post(
+    "/{conversation_id}/finalize"
+)
+async def finalize_conversation(
+    conversation_id: str,
+    customer_id: str = Depends(
+        get_current_user_id
+    ),
+    _customer_role: str = Depends(
+        require_customer
+    ),
+) -> dict:
+    """
+    Extract and save durable facts when the
+    customer leaves a conversation.
+
+    The local LLM therefore does not run during
+    every ordinary shopping turn.
+    """
+
+    stored = await run_in_threadpool(
+        memory_agent.finalize_conversation,
+        customer_id,
+        conversation_id,
+    )
+
+    return {
+        "conversation_id":
+            conversation_id,
+        "memory_saved":
+            len(stored),
+        "memories":
+            stored,
+    }
+
+
 @router.post("")
 async def chat(
     request: ChatRequest,
@@ -101,26 +187,7 @@ async def chat(
         require_customer
     ),
 ) -> StreamingResponse:
-    """
-    Execute one authenticated Retailigent chat turn.
-
-    Authentication and role validation happen before
-    the SSE stream begins.
-
-    Stream event contract:
-
-    turn_started
-    conversation
-    message_start
-    message_delta
-    block
-    done
-    error
-    """
-
     async def event_stream():
-        # The connection opens immediately even though
-        # orchestration itself may take some time.
         yield _sse_event(
             "turn_started",
             {
@@ -130,10 +197,6 @@ async def chat(
         )
 
         try:
-            # process_turn is currently synchronous
-            # because the underlying service wrappers
-            # are synchronous. Run it off the asyncio
-            # event loop.
             result = await run_in_threadpool(
                 orchestrator_agent.process_turn,
                 customer_id=customer_id,
@@ -212,9 +275,6 @@ async def chat(
                 customer_id,
             )
 
-            # Do not expose stack traces, Supabase
-            # internals, or implementation details to
-            # the browser.
             yield _sse_event(
                 "error",
                 {
@@ -227,9 +287,7 @@ async def chat(
 
     return StreamingResponse(
         event_stream(),
-        media_type=(
-            "text/event-stream"
-        ),
+        media_type="text/event-stream",
         headers={
             "Cache-Control":
                 "no-cache",

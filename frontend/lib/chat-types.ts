@@ -26,8 +26,13 @@ export interface ProductCardData {
   color?: string | null;
   size?: string | null;
 
-  effective_price?: number | null;
-  image_url?: string | null;
+  effective_price?:
+    | number
+    | null;
+
+  image_url?:
+    | string
+    | null;
 
   max_available_at_one_branch?:
     | number
@@ -36,23 +41,35 @@ export interface ProductCardData {
 
 
 export interface ProductCarouselBlock {
-  type: "product_carousel";
+  type:
+    "product_carousel";
 
   title: string;
 
-  products: ProductCardData[];
+  products:
+    ProductCardData[];
 }
 
 
 export interface StockBranchItem {
   branch_id: string;
+
   branch_name: string;
 
-  city?: string | null;
-  area?: string | null;
-  address?: string | null;
+  city?:
+    | string
+    | null;
 
-  available_quantity: number;
+  area?:
+    | string
+    | null;
+
+  address?:
+    | string
+    | null;
+
+  available_quantity:
+    number;
 
   status:
     | "out_of_stock"
@@ -62,64 +79,87 @@ export interface StockBranchItem {
 
 
 export interface StockStatusBlock {
-  type: "stock_status";
+  type:
+    "stock_status";
 
   variant_id: string;
 
-  product_name?: string | null;
-  sku?: string | null;
+  product_name?:
+    | string
+    | null;
 
-  branches: StockBranchItem[];
+  sku?:
+    | string
+    | null;
+
+  branches:
+    StockBranchItem[];
 }
 
 
 export interface CartSummaryChatBlock {
-  type: "cart_summary";
+  type:
+    "cart_summary";
 
-  data: CartResponse;
+  data:
+    CartResponse;
 }
 
 
 export interface WishlistChatBlock {
-  type: "wishlist";
+  type:
+    "wishlist";
 
-  data: WishlistResponse;
+  data:
+    WishlistResponse;
 }
 
 
 export interface ReservationChatBlock {
-  type: "reservation";
+  type:
+    "reservation";
 
-  reservation: Reservation;
+  reservation:
+    Reservation;
 }
 
 
 export interface SmartCartRuleChatBlock {
-  type: "smart_cart_rule";
+  type:
+    "smart_cart_rule";
 
-  rule: SmartCartRule;
+  rule:
+    SmartCartRule;
 }
 
 
 export interface AlertChatBlock {
-  type: "alert";
+  type:
+    "alert";
 
-  alert: RetailAlert;
+  alert:
+    RetailAlert;
 }
 
 
 export interface ChatOrderPayload {
   success?: boolean;
 
-  order_id?: string | null;
+  order_id?:
+    | string
+    | null;
 
   purchase_attempt_id?:
     | string
     | null;
 
-  reason_code?: string | null;
+  reason_code?:
+    | string
+    | null;
 
-  reason?: string | null;
+  reason?:
+    | string
+    | null;
 
   variant_id?: string;
 
@@ -128,16 +168,20 @@ export interface ChatOrderPayload {
 
 
 export interface OrderConfirmationChatBlock {
-  type: "order_confirmation";
+  type:
+    "order_confirmation";
 
-  order: ChatOrderPayload;
+  order:
+    ChatOrderPayload;
 }
 
 
 export interface NotificationListChatBlock {
-  type: "notification_list";
+  type:
+    "notification_list";
 
-  data: NotificationListResponse;
+  data:
+    NotificationListResponse;
 }
 
 
@@ -162,11 +206,53 @@ export interface ChatMessage {
 
   content: string;
 
-  language?: ChatLanguage;
+  language?:
+    ChatLanguage;
 
-  blocks: RenderableBlock[];
+  blocks:
+    RenderableBlock[];
 
-  isStreaming?: boolean;
+  isStreaming?:
+    boolean;
+
+  created_at?:
+    | string
+    | null;
+}
+
+
+export interface ConversationSummary {
+  id: string;
+
+  title?:
+    | string
+    | null;
+
+  language:
+    ChatLanguage;
+
+  created_at?:
+    | string
+    | null;
+
+  updated_at?:
+    | string
+    | null;
+}
+
+
+export interface ConversationListResponse {
+  conversations:
+    ConversationSummary[];
+}
+
+
+export interface ConversationHistoryResponse {
+  conversation:
+    ConversationSummary;
+
+  messages:
+    ChatMessage[];
 }
 
 
@@ -185,9 +271,11 @@ export interface ConversationEventData {
 export interface MessageStartEventData {
   message_id: string;
 
-  role: "assistant";
+  role:
+    "assistant";
 
-  language: ChatLanguage;
+  language:
+    ChatLanguage;
 }
 
 
@@ -201,7 +289,8 @@ export interface MessageDeltaEventData {
 export interface BlockEventData {
   message_id: string;
 
-  block: RenderableBlock;
+  block:
+    RenderableBlock;
 }
 
 
@@ -210,7 +299,8 @@ export interface DoneEventData {
 
   message_id: string;
 
-  language: ChatLanguage;
+  language:
+    ChatLanguage;
 
   block_count: number;
 }

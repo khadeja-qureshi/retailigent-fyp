@@ -255,6 +255,10 @@ class ParsedCustomerMessage(BaseModel):
         default_factory=ExtractedEntities
     )
 
+    context_used: dict[str, Any] = Field(
+        default_factory=dict
+    )
+
     requires_clarification: bool = False
 
     clarification_question: (
