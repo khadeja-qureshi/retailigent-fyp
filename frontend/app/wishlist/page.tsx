@@ -1,7 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import Link from "next/link";
+
+import {
+  useEffect,
+  useState,
+} from "react";
 
 import WishlistBlock from "@/components/chat-blocks/WishlistBlock";
 
@@ -12,18 +16,38 @@ import {
   removeWishlistItem,
 } from "@/lib/api";
 
-export default function WishlistPage() {
-  const [wishlist, setWishlist] =
-    useState<WishlistResponse | null>(null);
 
-  const [variantId, setVariantId] =
+export default function WishlistPage() {
+  const [
+    wishlist,
+    setWishlist,
+  ] =
+    useState<WishlistResponse | null>(
+      null
+    );
+
+  const [
+    variantId,
+    setVariantId,
+  ] =
     useState("");
 
-  const [error, setError] =
-    useState<string | null>(null);
+  const [
+    error,
+    setError,
+  ] =
+    useState<string | null>(
+      null
+    );
 
-  const [busyItemId, setBusyItemId] =
-    useState<string | null>(null);
+  const [
+    busyItemId,
+    setBusyItemId,
+  ] =
+    useState<string | null>(
+      null
+    );
+
 
   async function loadWishlist() {
     try {
@@ -41,24 +65,34 @@ export default function WishlistPage() {
     }
   }
 
+
   useEffect(() => {
-  queueMicrotask(() => {
-    void loadWishlist();
-  });
-}, []);
+    queueMicrotask(() => {
+      void loadWishlist();
+    });
+  }, []);
+
 
   async function handleAdd() {
-    if (!variantId.trim()) {
+    if (
+      !variantId.trim()
+    ) {
       return;
     }
 
     try {
+      setError(null);
+
       const result =
         await addWishlistItem(
           variantId.trim()
         );
 
-      setWishlist(result);
+      setWishlist(
+        result
+      );
+
+      setVariantId("");
     } catch (error) {
       setError(
         error instanceof Error
@@ -68,103 +102,164 @@ export default function WishlistPage() {
     }
   }
 
+
   async function handleRemove(
     itemId: string
   ) {
     try {
-      setBusyItemId(itemId);
+      setError(null);
+
+      setBusyItemId(
+        itemId
+      );
 
       await removeWishlistItem(
         itemId
       );
 
       await loadWishlist();
+    } catch (error) {
+      setError(
+        error instanceof Error
+          ? error.message
+          : "Unable to remove item"
+      );
     } finally {
       setBusyItemId(null);
     }
   }
 
-  return (
-    <main className="min-h-screen bg-neutral-950 text-white">
-      <div className="mx-auto max-w-3xl p-6 md:p-10">
-        <div className="mb-8 flex items-center justify-between">
-          <div>
-            <p className="text-sm text-neutral-500">
-              Retailigent
-            </p>
 
-            <h1 className="text-3xl font-semibold">
-              Wishlist
-            </h1>
+  return (
+    <main className="min-h-[calc(100dvh-4rem)] overflow-x-hidden bg-[#f1e6de] text-[#2c1c20]">
+      <div className="mx-auto w-full max-w-5xl px-4 py-6 sm:px-6 sm:py-8 lg:px-8 lg:py-10">
+
+        <header className="mb-6 sm:mb-8">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[#7f2a3c]">
+                Saved items
+              </p>
+
+              <h1 className="mt-2 text-3xl font-bold sm:text-4xl">
+                Wishlist
+              </h1>
+
+              <p className="mt-2 max-w-2xl text-sm leading-6 text-[#756369] sm:text-base">
+                Keep track of products you want
+                to revisit later.
+              </p>
+            </div>
+
+            <Link
+              href="/chat"
+              className="inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-[#7f2a3c] px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-[#682132] sm:w-auto"
+            >
+              Find products
+            </Link>
           </div>
 
-          <div className="flex gap-4 text-sm">
+
+          <nav className="mt-5 flex gap-2 overflow-x-auto pb-1 sm:flex-wrap sm:overflow-visible">
             <Link
               href="/cart"
-              className="text-neutral-300 underline"
+              className="shrink-0 rounded-full border border-[#d8c8c1] bg-[#fffaf7] px-4 py-2 text-sm font-medium text-[#5f4d52]"
             >
               Cart
             </Link>
 
             <Link
               href="/reservations"
-              className="text-neutral-300 underline"
+              className="shrink-0 rounded-full border border-[#d8c8c1] bg-[#fffaf7] px-4 py-2 text-sm font-medium text-[#5f4d52]"
             >
               Reservations
             </Link>
 
             <Link
               href="/orders"
-              className="text-neutral-300 underline"
+              className="shrink-0 rounded-full border border-[#d8c8c1] bg-[#fffaf7] px-4 py-2 text-sm font-medium text-[#5f4d52]"
             >
               Orders
             </Link>
-          </div>
-        </div>
+          </nav>
+        </header>
 
-        {error && (
-          <div className="mb-6 rounded-xl border border-red-900 bg-red-950/40 p-4 text-red-300">
-            {error}
-          </div>
-        )}
 
-        <div className="mb-8 rounded-2xl border border-neutral-800 bg-neutral-900 p-5">
-          <p className="text-sm font-medium">
-            Temporary Phase 6 test control
+        {
+          error
+          && (
+            <div className="mb-6 rounded-2xl border border-[#e4aaa3] bg-[#fff2ef] px-4 py-3 text-sm text-[#9b352e]">
+              {
+                error
+              }
+            </div>
+          )
+        }
+
+
+        <section className="mb-6 rounded-2xl border border-[#dccbc4] bg-[#fffaf7] p-4 shadow-sm sm:mb-8 sm:p-6">
+          <p className="text-sm font-semibold text-[#332e34]">
+            Developer test control
           </p>
 
-          <div className="mt-4 flex gap-3">
+          <p className="mt-1 text-xs leading-5 text-[#8c777c]">
+            Save a variant directly by UUID.
+          </p>
+
+
+          <div className="mt-4 flex flex-col gap-3 sm:flex-row">
             <input
-              value={variantId}
-              onChange={(event) =>
+              value={
+                variantId
+              }
+              onChange={(
+                event
+              ) => {
                 setVariantId(
                   event.target.value
-                )
-              }
+                );
+              }}
               placeholder="Variant UUID"
-              className="min-w-0 flex-1 rounded-lg border border-neutral-700 bg-neutral-950 p-3"
+              className="min-h-11 min-w-0 flex-1 rounded-xl border border-[#d8c8c1] bg-white px-3 py-2.5 text-base outline-none transition focus:border-[#7779de] sm:text-sm"
             />
 
             <button
-              onClick={handleAdd}
-              className="rounded-lg bg-white px-5 text-black"
+              type="button"
+              onClick={
+                handleAdd
+              }
+              disabled={
+                !variantId.trim()
+              }
+              className="min-h-11 rounded-xl bg-[#ce4d42] px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-[#ad3d34] disabled:opacity-40"
             >
-              Add
+              Add to wishlist
             </button>
           </div>
-        </div>
+        </section>
 
-        {!wishlist ? (
-          <p className="text-neutral-400">
-            Loading wishlist...
-          </p>
-        ) : (
-          <WishlistBlock
-            data={wishlist}
-            busyItemId={busyItemId}
-            onRemove={handleRemove}
-          />
-        )}
+
+        {
+          !wishlist
+            ? (
+              <div className="rounded-2xl border border-[#dccbc4] bg-[#fffaf7] p-5 text-sm text-[#756369] shadow-sm">
+                Loading wishlist...
+              </div>
+            )
+            : (
+              <WishlistBlock
+                data={
+                  wishlist
+                }
+                busyItemId={
+                  busyItemId
+                }
+                onRemove={
+                  handleRemove
+                }
+              />
+            )
+        }
       </div>
     </main>
   );

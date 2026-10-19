@@ -24,8 +24,9 @@ export default function MessageBubble({
   return (
     <div
       className={
-        "flex w-full "
-        + (
+        "flex w-full min-w-0 "
+        +
+        (
           isUser
             ? "justify-end"
             : "justify-start"
@@ -36,33 +37,57 @@ export default function MessageBubble({
         className={
           isUser
             ? (
-              "max-w-[85%] "
-              + "rounded-2xl "
-              + "rounded-br-md "
-              + "bg-[#7779de] "
-              + "px-4 py-3 "
-              + "text-[#fffaf7] "
-              + "shadow-sm "
-              + "sm:max-w-[70%]"
+              "max-w-[90%] "
+              +
+              "overflow-hidden "
+              +
+              "rounded-2xl "
+              +
+              "rounded-br-md "
+              +
+              "bg-[#7779de] "
+              +
+              "px-4 py-3 "
+              +
+              "text-[#fffaf7] "
+              +
+              "shadow-sm "
+              +
+              "sm:max-w-[70%]"
             )
             : (
               "w-full "
-              + "max-w-3xl "
-              + "rounded-2xl "
-              + "rounded-bl-md "
-              + "border "
-              + "border-[#dccbc4] "
-              + "bg-[#fffaf7] "
-              + "px-4 py-4 "
-              + "text-[#2c1c20] "
-              + "shadow-sm"
+              +
+              "min-w-0 "
+              +
+              "max-w-3xl "
+              +
+              "overflow-hidden "
+              +
+              "rounded-2xl "
+              +
+              "rounded-bl-md "
+              +
+              "border "
+              +
+              "border-[#dccbc4] "
+              +
+              "bg-[#fffaf7] "
+              +
+              "px-3.5 py-4 "
+              +
+              "text-[#2c1c20] "
+              +
+              "shadow-sm "
+              +
+              "sm:px-4"
             )
         }
       >
         {
           message.content
           && (
-            <p className="whitespace-pre-wrap text-sm leading-6">
+            <p className="whitespace-pre-wrap break-words text-sm leading-6">
               {
                 message.content
               }
@@ -70,9 +95,9 @@ export default function MessageBubble({
           )
         }
 
+
         {
-          message
-            .isStreaming
+          message.isStreaming
           && (
             <span className="mt-2 inline-flex items-center gap-1 text-xs text-[#756369]">
               <span className="animate-pulse text-[#ce4d42]">
@@ -84,33 +109,30 @@ export default function MessageBubble({
           )
         }
 
+
         {
           !isUser
           &&
-          message
-            .blocks
-            .length
-            > 0
+          message.blocks.length
+          > 0
           && (
-            <div className="mt-4 space-y-4">
+            <div className="mt-4 min-w-0 space-y-4 overflow-hidden">
               {
-                message
-                  .blocks
-                  .map(
-                    (
-                      block,
-                      index
-                    ) => (
-                      <BlockRenderer
-                        key={
-                          `${message.id}-block-${index}`
-                        }
-                        block={
-                          block
-                        }
-                      />
-                    )
+                message.blocks.map(
+                  (
+                    block,
+                    index
+                  ) => (
+                    <BlockRenderer
+                      key={
+                        `${message.id}-block-${index}`
+                      }
+                      block={
+                        block
+                      }
+                    />
                   )
+                )
               }
             </div>
           )

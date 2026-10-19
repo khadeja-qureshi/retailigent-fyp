@@ -1,5 +1,7 @@
 "use client";
 
+import Link from "next/link";
+
 import {
   useCallback,
   useEffect,
@@ -28,20 +30,19 @@ function memoryLabel(
       .split(" ")
       .filter(Boolean);
 
-  return (
-    words
-      .map(
-        (
-          word
-        ) =>
-          word
-            .charAt(0)
-            .toUpperCase()
-          +
-          word.slice(1)
-      )
-      .join(" ")
-  );
+
+  return words
+    .map(
+      (
+        word
+      ) =>
+        word
+          .charAt(0)
+          .toUpperCase()
+        +
+        word.slice(1)
+    )
+    .join(" ");
 }
 
 
@@ -56,12 +57,14 @@ function memoryValue(
     return "Not specified";
   }
 
+
   if (
     typeof value
     === "string"
   ) {
     return value;
   }
+
 
   if (
     typeof value
@@ -74,6 +77,7 @@ function memoryValue(
       value
     );
   }
+
 
   try {
     return JSON.stringify(
@@ -112,7 +116,49 @@ function memoryTypeLabel(
       "Other",
   };
 
+
   return labels[type];
+}
+
+
+function formatMemoryDate(
+  value?:
+    string
+    | null
+) {
+  if (!value) {
+    return null;
+  }
+
+
+  const date =
+    new Date(
+      value
+    );
+
+
+  if (
+    Number.isNaN(
+      date.getTime()
+    )
+  ) {
+    return null;
+  }
+
+
+  return date.toLocaleDateString(
+    undefined,
+    {
+      month:
+        "short",
+
+      day:
+        "numeric",
+
+      year:
+        "numeric",
+    }
+  );
 }
 
 
@@ -121,9 +167,9 @@ export default function ProfilePage() {
     memories,
     setMemories,
   ] =
-    useState<
-      CustomerMemory[]
-    >([]);
+    useState<CustomerMemory[]>(
+      []
+    );
 
   const [
     loading,
@@ -135,17 +181,17 @@ export default function ProfilePage() {
     deletingId,
     setDeletingId,
   ] =
-    useState<
-      string | null
-    >(null);
+    useState<string | null>(
+      null
+    );
 
   const [
     error,
     setError,
   ] =
-    useState<
-      string | null
-    >(null);
+    useState<string | null>(
+      null
+    );
 
 
   const loadMemories =
@@ -160,28 +206,26 @@ export default function ProfilePage() {
             null
           );
 
+
           const result =
-            await (
-              getMemories()
-            );
+            await getMemories();
+
 
           setMemories(
             result.memories
           );
-
         } catch (
           caught
         ) {
           setError(
-            caught instanceof
-              Error
+            caught instanceof Error
               ? caught.message
               : (
                 "Retailigent memories "
-                + "could not be loaded."
+                +
+                "could not be loaded."
               )
           );
-
         } finally {
           setLoading(
             false
@@ -195,9 +239,7 @@ export default function ProfilePage() {
   useEffect(() => {
     queueMicrotask(
       () => {
-        void (
-          loadMemories()
-        );
+        void loadMemories();
       }
     );
   }, [
@@ -213,19 +255,24 @@ export default function ProfilePage() {
       window.confirm(
         (
           "Delete this remembered fact?\n\n"
-          + memoryLabel(
+          +
+          memoryLabel(
             memory.memory_key
           )
-          + ": "
-          + memoryValue(
+          +
+          ": "
+          +
+          memoryValue(
             memory.memory_value
           )
         )
       );
 
+
     if (!confirmed) {
       return;
     }
+
 
     try {
       setDeletingId(
@@ -236,11 +283,11 @@ export default function ProfilePage() {
         null
       );
 
-      await (
-        deleteMemory(
-          memory.id
-        )
+
+      await deleteMemory(
+        memory.id
       );
+
 
       setMemories(
         (
@@ -254,20 +301,18 @@ export default function ProfilePage() {
               !== memory.id
           )
       );
-
     } catch (
       caught
     ) {
       setError(
-        caught instanceof
-          Error
+        caught instanceof Error
           ? caught.message
           : (
             "The remembered fact "
-            + "could not be deleted."
+            +
+            "could not be deleted."
           )
       );
-
     } finally {
       setDeletingId(
         null
@@ -277,29 +322,101 @@ export default function ProfilePage() {
 
 
   return (
-    <main className="min-h-[calc(100vh-3.5rem)] bg-[#f1e6de] px-4 py-8 text-[#2c1c20] sm:px-6">
-      <div className="mx-auto max-w-4xl">
-        <section className="rounded-3xl border border-[#dccbc4] bg-[#fffaf7] p-6 shadow-sm sm:p-8">
-          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[#7f2a3c]">
-            Privacy & Memory
-          </p>
+    <main className="min-h-[calc(100dvh-4rem)] overflow-x-hidden bg-[#f1e6de] text-[#2c1c20]">
 
-          <h1 className="mt-2 text-3xl font-bold">
-            What Retailigent remembers about you
-          </h1>
+      <div className="mx-auto w-full max-w-5xl px-4 py-6 sm:px-6 sm:py-8 lg:px-8 lg:py-10">
 
-          <p className="mt-3 max-w-2xl text-sm leading-6 text-[#756369]">
-            These durable facts help Retailigent avoid
-            asking you to repeat useful preferences
-            across separate conversations. You remain
-            in control and can delete any fact.
-          </p>
+        <section className="overflow-hidden rounded-3xl border border-[#dccbc4] bg-[#fffaf7] shadow-sm">
 
-          <div className="mt-5 rounded-2xl bg-[#f7ece7] px-4 py-3 text-sm text-[#674f56]">
-            Deleted memories are excluded from future
-            conversation context snapshots.
+          <div className="relative p-5 sm:p-8">
+
+            <div
+              aria-hidden="true"
+              className="absolute -right-16 -top-16 h-44 w-44 rounded-full bg-[#7779de]/10 blur-2xl"
+            />
+
+            <div
+              aria-hidden="true"
+              className="absolute -bottom-20 -left-20 h-44 w-44 rounded-full bg-[#f54631]/10 blur-2xl"
+            />
+
+
+            <div className="relative">
+
+              <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
+
+                <div className="max-w-2xl">
+                  <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[#7f2a3c]">
+                    Privacy & Memory
+                  </p>
+
+                  <h1 className="mt-2 text-3xl font-bold leading-tight sm:text-4xl">
+                    What Retailigent remembers about you
+                  </h1>
+
+                  <p className="mt-3 text-sm leading-6 text-[#756369] sm:text-base">
+                    Durable facts help Retailigent avoid
+                    asking you to repeat useful preferences
+                    across separate conversations.
+                  </p>
+                </div>
+
+
+                <Link
+                  href="/chat"
+                  className="inline-flex min-h-11 w-full shrink-0 items-center justify-center rounded-xl bg-[#7f2a3c] px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-[#682132] sm:w-auto"
+                >
+                  Open assistant
+                </Link>
+              </div>
+
+
+              <div className="mt-6 grid gap-3 sm:grid-cols-3">
+
+                <div className="rounded-2xl border border-[#e2d5cf] bg-white/80 p-4">
+                  <p className="text-xs uppercase tracking-[0.14em] text-[#8c777c]">
+                    Remembered facts
+                  </p>
+
+                  <strong className="mt-2 block text-2xl text-[#332e34]">
+                    {
+                      memories.length
+                    }
+                  </strong>
+                </div>
+
+
+                <div className="rounded-2xl border border-[#e2d5cf] bg-white/80 p-4">
+                  <p className="text-xs uppercase tracking-[0.14em] text-[#8c777c]">
+                    Privacy
+                  </p>
+
+                  <strong className="mt-2 block text-sm text-[#332e34]">
+                    Customer controlled
+                  </strong>
+                </div>
+
+
+                <div className="rounded-2xl border border-[#e2d5cf] bg-white/80 p-4">
+                  <p className="text-xs uppercase tracking-[0.14em] text-[#8c777c]">
+                    Context
+                  </p>
+
+                  <strong className="mt-2 block text-sm text-[#332e34]">
+                    Across conversations
+                  </strong>
+                </div>
+              </div>
+            </div>
           </div>
         </section>
+
+
+        <div className="mt-5 rounded-2xl border border-[#d9cdc7] bg-[#f7ece7] px-4 py-4 text-sm leading-6 text-[#674f56] sm:px-5">
+          You remain in control of these memories.
+          Deleted memories are excluded from future
+          conversation context snapshots.
+        </div>
 
 
         {
@@ -315,109 +432,176 @@ export default function ProfilePage() {
 
 
         <section className="mt-6">
+
+          <div className="mb-4 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#7f2a3c]">
+                Memory controls
+              </p>
+
+              <h2 className="mt-1 text-xl font-semibold text-[#332e34]">
+                Remembered facts
+              </h2>
+            </div>
+
+
+            {
+              !loading
+              &&
+              memories.length > 0
+              && (
+                <span className="text-xs text-[#8c777c]">
+                  Delete any fact you no longer want used
+                </span>
+              )
+            }
+          </div>
+
+
           {
             loading
               ? (
-                <div className="rounded-3xl border border-[#dccbc4] bg-[#fffaf7] p-8 text-center text-[#756369]">
+                <div className="rounded-3xl border border-[#dccbc4] bg-[#fffaf7] p-8 text-center text-sm text-[#756369] shadow-sm">
                   Loading your memories...
                 </div>
               )
               : memories.length
                 === 0
                 ? (
-                  <div className="rounded-3xl border border-[#dccbc4] bg-[#fffaf7] p-8 text-center">
-                    <h2 className="text-lg font-semibold">
-                      Nothing remembered yet
-                    </h2>
+                  <div className="rounded-3xl border border-[#dccbc4] bg-[#fffaf7] px-5 py-10 text-center shadow-sm sm:p-10">
 
-                    <p className="mt-2 text-sm text-[#756369]">
-                      Durable preferences saved from
-                      future conversations will appear
-                      here.
+                    <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-[#eeeafb] font-bold text-[#5f62c7]">
+                      R
+                    </div>
+
+                    <h3 className="mt-4 text-lg font-semibold text-[#332e34]">
+                      Nothing remembered yet
+                    </h3>
+
+                    <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-[#756369]">
+                      Durable preferences extracted from
+                      future conversations will appear here.
                     </p>
+
+
+                    <Link
+                      href="/chat"
+                      className="mt-5 inline-flex min-h-11 items-center justify-center rounded-xl border border-[#7779de] px-4 py-2.5 text-sm font-semibold text-[#5f62c7] transition hover:bg-[#f0effc]"
+                    >
+                      Talk to Retailigent
+                    </Link>
                   </div>
                 )
                 : (
-                  <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="grid gap-4 md:grid-cols-2">
+
                     {
                       memories.map(
                         (
                           memory
-                        ) => (
-                          <article
-                            key={
-                              memory.id
-                            }
-                            className="rounded-2xl border border-[#dccbc4] bg-[#fffaf7] p-5 shadow-sm"
-                          >
-                            <div className="flex items-start justify-between gap-4">
-                              <div>
-                                <span className="inline-flex rounded-full bg-[#f4ded8] px-2.5 py-1 text-[11px] font-semibold text-[#7f2a3c]">
-                                  {
-                                    memoryTypeLabel(
-                                      memory
-                                        .memory_type
-                                    )
-                                  }
-                                </span>
+                        ) => {
+                          const confidence =
+                            Math.round(
+                              Number(
+                                memory.confidence
+                              )
+                              * 100
+                            );
 
-                                <h2 className="mt-3 font-semibold">
+                          const confirmedDate =
+                            formatMemoryDate(
+                              memory.last_confirmed_at
+                              ??
+                              memory.updated_at
+                            );
+
+
+                          return (
+                            <article
+                              key={
+                                memory.id
+                              }
+                              className="min-w-0 rounded-2xl border border-[#dccbc4] bg-[#fffaf7] p-4 shadow-sm sm:p-5"
+                            >
+
+                              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+
+                                <div className="min-w-0">
+                                  <span className="inline-flex rounded-full bg-[#f4ded8] px-2.5 py-1 text-[11px] font-semibold text-[#7f2a3c]">
+                                    {
+                                      memoryTypeLabel(
+                                        memory.memory_type
+                                      )
+                                    }
+                                  </span>
+
+                                  <h3 className="mt-3 break-words font-semibold text-[#332e34]">
+                                    {
+                                      memoryLabel(
+                                        memory.memory_key
+                                      )
+                                    }
+                                  </h3>
+                                </div>
+
+
+                                <span className="w-fit shrink-0 rounded-full bg-[#eeeafb] px-2.5 py-1 text-[11px] font-semibold text-[#5f62c7]">
                                   {
-                                    memoryLabel(
-                                      memory
-                                        .memory_key
-                                    )
+                                    confidence
                                   }
-                                </h2>
+                                  % confidence
+                                </span>
                               </div>
 
-                              <span className="shrink-0 text-xs text-[#8c777c]">
-                                {
-                                  Math.round(
-                                    Number(
-                                      memory
-                                        .confidence
-                                    )
-                                    * 100
-                                  )
-                                }
-                                % confidence
-                              </span>
-                            </div>
 
-                            <pre className="mt-4 whitespace-pre-wrap break-words font-sans text-sm leading-6 text-[#5d484e]">
+                              <div className="mt-4 rounded-xl bg-white p-3.5">
+                                <pre className="whitespace-pre-wrap break-words font-sans text-sm leading-6 text-[#5d484e]">
+                                  {
+                                    memoryValue(
+                                      memory.memory_value
+                                    )
+                                  }
+                                </pre>
+                              </div>
+
+
                               {
-                                memoryValue(
-                                  memory
-                                    .memory_value
+                                confirmedDate
+                                && (
+                                  <p className="mt-3 text-xs text-[#9a858a]">
+                                    Last confirmed{" "}
+                                    {
+                                      confirmedDate
+                                    }
+                                  </p>
                                 )
                               }
-                            </pre>
 
-                            <button
-                              type="button"
-                              disabled={
-                                deletingId
-                                === memory.id
-                              }
-                              onClick={() => {
-                                void (
-                                  handleDelete(
+
+                              <button
+                                type="button"
+                                disabled={
+                                  deletingId
+                                  === memory.id
+                                }
+                                onClick={() => {
+                                  void handleDelete(
                                     memory
-                                  )
-                                );
-                              }}
-                              className="mt-5 rounded-xl border border-[#ce4d42] px-3.5 py-2 text-sm font-medium text-[#a53d35] transition hover:bg-[#fff0ed] disabled:cursor-not-allowed disabled:opacity-50"
-                            >
-                              {
-                                deletingId
-                                === memory.id
-                                  ? "Deleting..."
-                                  : "Delete memory"
-                              }
-                            </button>
-                          </article>
-                        )
+                                  );
+                                }}
+                                className="mt-5 min-h-11 w-full rounded-xl border border-[#e4aaa3] px-4 py-2.5 text-sm font-semibold text-[#b33d34] transition hover:bg-[#fff2ef] disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
+                              >
+                                {
+                                  deletingId
+                                  === memory.id
+                                    ? "Deleting..."
+                                    : "Delete memory"
+                                }
+                              </button>
+                            </article>
+                          );
+                        }
                       )
                     }
                   </div>

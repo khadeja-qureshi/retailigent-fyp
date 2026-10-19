@@ -13,30 +13,43 @@ import {
 
 import "./globals.css";
 
+import MobileBottomNav from "@/components/MobileBottomNav";
 import NavBar from "@/components/NavBar";
 
 
 const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
+  variable:
+    "--font-geist-sans",
+
+  subsets: [
+    "latin",
+  ],
 });
 
 
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
+const geistMono =
+  Geist_Mono({
+    variable:
+      "--font-geist-mono",
+
+    subsets: [
+      "latin",
+    ],
+  });
 
 
 export const metadata: Metadata = {
-  title: "Retailigent",
+  title:
+    "Retailigent",
+
   description:
     "Agentic AI-powered intelligent clothing retail assistant",
 };
 
 
 interface RootLayoutProps {
-  children: ReactNode;
+  children:
+    ReactNode;
 }
 
 
@@ -47,8 +60,10 @@ export default function RootLayout({
     <html
       lang="en"
       className={
-        `${geistSans.variable} ` +
-        `${geistMono.variable} ` +
+        `${geistSans.variable} `
+        +
+        `${geistMono.variable} `
+        +
         "h-full antialiased"
       }
     >
@@ -58,7 +73,11 @@ export default function RootLayout({
       >
         <NavBar />
 
-        {children}
+        {
+          children
+        }
+
+        <MobileBottomNav />
       </body>
     </html>
   );

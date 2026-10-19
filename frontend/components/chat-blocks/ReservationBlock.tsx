@@ -11,7 +11,9 @@ import {
 
 
 interface Props {
-  reservation: Reservation;
+  reservation:
+    Reservation;
+
   busy?: boolean;
 
   onRelease: (
@@ -23,20 +25,26 @@ interface Props {
 function formatCountdown(
   seconds: number
 ) {
-  const value = Math.max(
-    seconds,
-    0
-  );
+  const value =
+    Math.max(
+      seconds,
+      0
+    );
 
-  const minutes = Math.floor(
-    value / 60
-  );
+  const minutes =
+    Math.floor(
+      value / 60
+    );
 
-  const secs = value % 60;
+  const secs =
+    value % 60;
 
   return `${minutes}:${secs
     .toString()
-    .padStart(2, "0")}`;
+    .padStart(
+      2,
+      "0"
+    )}`;
 }
 
 
@@ -48,7 +56,9 @@ export default function ReservationBlock({
   const [
     secondsLeft,
     setSecondsLeft,
-  ] = useState(0);
+  ] =
+    useState(0);
+
 
   useEffect(() => {
     function update() {
@@ -56,7 +66,8 @@ export default function ReservationBlock({
         new Date(
           reservation.expires_at
         ).getTime()
-        - Date.now();
+        -
+        Date.now();
 
       setSecondsLeft(
         Math.max(
@@ -68,116 +79,179 @@ export default function ReservationBlock({
       );
     }
 
+
     update();
 
-    const timer = window.setInterval(
-      update,
-      1000
-    );
+    const timer =
+      window.setInterval(
+        update,
+        1000
+      );
 
-    return () =>
-      window.clearInterval(timer);
 
-  }, [reservation.expires_at]);
+    return () => {
+      window.clearInterval(
+        timer
+      );
+    };
+  }, [
+    reservation.expires_at,
+  ]);
 
 
   const active =
-    reservation.status === "active";
+    reservation.status
+    === "active";
 
   const expiredByClock =
-    active && secondsLeft <= 0;
+    active
+    &&
+    secondsLeft
+    <= 0;
 
 
   return (
-    <article className="rounded-2xl border border-neutral-800 bg-neutral-900 p-5">
-
-      <p className="text-xs uppercase tracking-wide text-neutral-500">
-        Reservation
-      </p>
-
-      <h3 className="mt-2 text-lg font-semibold">
-        {reservation.product?.name ??
-          "Reserved item"}
-      </h3>
-
-      <p className="mt-1 text-sm text-neutral-500">
-        {reservation.variant?.sku ??
-          reservation.variant_id}
-      </p>
-
-      <div className="mt-5 space-y-2 text-sm">
-
-        <p>
-          Quantity:{" "}
-          <strong>
-            {reservation.quantity}
-          </strong>
-        </p>
-
-        <p>
-          Branch:{" "}
-          <strong>
-            {reservation.branch?.name ??
-              reservation.branch_id}
-          </strong>
-        </p>
-
-        {reservation.branch?.area && (
-          <p className="text-neutral-400">
-            {reservation.branch.area}
-            {reservation.branch.city
-              ? `, ${reservation.branch.city}`
-              : ""}
+    <article className="min-w-0 rounded-2xl border border-[#dccbc4] bg-[#fffaf7] p-4 shadow-sm sm:p-5">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#7f2a3c]">
+            Reservation
           </p>
-        )}
 
-        <p>
-          Status:{" "}
-          <strong className="capitalize">
-            {reservation.status}
-          </strong>
-        </p>
+          <h3 className="mt-2 break-words text-lg font-semibold text-[#332e34]">
+            {
+              reservation.product
+                ?.name
+              ??
+              "Reserved item"
+            }
+          </h3>
 
+          <p className="mt-1 break-all text-xs text-[#8c777c] sm:text-sm">
+            {
+              reservation.variant
+                ?.sku
+              ??
+              reservation.variant_id
+            }
+          </p>
+        </div>
+
+
+        <span className="w-fit rounded-full bg-[#eeeafb] px-3 py-1.5 text-xs font-semibold capitalize text-[#5f62c7]">
+          {
+            reservation.status
+          }
+        </span>
       </div>
 
-      {active && !expiredByClock && (
-        <div className="mt-5 rounded-xl bg-amber-950/40 p-4">
 
-          <p className="text-xs uppercase text-amber-300">
-            Hold expires in
-          </p>
+      <div className="mt-5 grid gap-3 text-sm sm:grid-cols-2">
+        <div className="rounded-xl bg-white p-3">
+          <span className="block text-xs text-[#8c777c]">
+            Quantity
+          </span>
 
-          <p className="mt-1 text-2xl font-semibold text-amber-300">
-            {formatCountdown(
-              secondsLeft
-            )}
-          </p>
-
+          <strong className="mt-1 block text-[#332e34]">
+            {
+              reservation.quantity
+            }
+          </strong>
         </div>
-      )}
 
-      {expiredByClock && (
-        <p className="mt-5 text-amber-400">
-          This hold has reached its expiry time.
-        </p>
-      )}
+        <div className="min-w-0 rounded-xl bg-white p-3">
+          <span className="block text-xs text-[#8c777c]">
+            Branch
+          </span>
 
-      {active && !expiredByClock && (
-        <button
-          disabled={busy}
-          onClick={() =>
-            onRelease(
-              reservation.id
-            )
-          }
-          className="mt-5 rounded-lg border border-neutral-700 px-4 py-2 hover:bg-neutral-800 disabled:opacity-50"
-        >
-          {busy
-            ? "Releasing..."
-            : "Release hold"}
-        </button>
-      )}
+          <strong className="mt-1 block break-words text-[#332e34]">
+            {
+              reservation.branch
+                ?.name
+              ??
+              reservation.branch_id
+            }
+          </strong>
+        </div>
+      </div>
 
+
+      {
+        reservation.branch
+          ?.area
+        && (
+          <p className="mt-3 text-sm leading-6 text-[#756369]">
+            {
+              reservation.branch.area
+            }
+            {
+              reservation.branch
+                .city
+                ? `, ${reservation.branch.city}`
+                : ""
+            }
+          </p>
+        )
+      }
+
+
+      {
+        active
+        &&
+        !expiredByClock
+        && (
+          <div className="mt-5 rounded-xl border border-[#ecd5a4] bg-[#fff8e8] p-4">
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#8a6424]">
+              Hold expires in
+            </p>
+
+            <p className="mt-1 text-2xl font-semibold text-[#8a6424]">
+              {
+                formatCountdown(
+                  secondsLeft
+                )
+              }
+            </p>
+          </div>
+        )
+      }
+
+
+      {
+        expiredByClock
+        && (
+          <div className="mt-5 rounded-xl border border-[#ecd5a4] bg-[#fff8e8] p-3 text-sm text-[#8a6424]">
+            This hold has reached its expiry time.
+          </div>
+        )
+      }
+
+
+      {
+        active
+        &&
+        !expiredByClock
+        && (
+          <button
+            type="button"
+            disabled={
+              busy
+            }
+            onClick={() => {
+              onRelease(
+                reservation.id
+              );
+            }}
+            className="mt-5 min-h-11 w-full rounded-xl border border-[#7f2a3c] px-4 py-2.5 text-sm font-semibold text-[#7f2a3c] transition hover:bg-[#f7e9e8] disabled:opacity-50 sm:w-auto"
+          >
+            {
+              busy
+                ? "Releasing..."
+                : "Release hold"
+            }
+          </button>
+        )
+      }
     </article>
   );
 }

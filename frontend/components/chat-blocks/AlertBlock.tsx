@@ -6,7 +6,9 @@ import {
 
 
 interface Props {
-  alert: RetailAlert;
+  alert:
+    RetailAlert;
+
   busy?: boolean;
 
   onPause: (
@@ -24,13 +26,22 @@ interface Props {
 
 
 function alertLabel(
-  type: RetailAlert["alert_type"]
+  type:
+    RetailAlert[
+      "alert_type"
+    ]
 ) {
-  if (type === "price_drop") {
+  if (
+    type
+    === "price_drop"
+  ) {
     return "Price drop";
   }
 
-  if (type === "restock") {
+  if (
+    type
+    === "restock"
+  ) {
     return "Restock";
   }
 
@@ -39,9 +50,13 @@ function alertLabel(
 
 
 function money(
-  value?: number | null
+  value?:
+    number
+    | null
 ) {
-  if (value == null) {
+  if (
+    value == null
+  ) {
     return "—";
   }
 
@@ -57,165 +72,216 @@ export default function AlertBlock({
   onDelete,
 }: Props) {
   const triggered =
-    Boolean(alert.triggered_at);
+    Boolean(
+      alert.triggered_at
+    );
 
   const active =
-    alert.is_active &&
+    alert.is_active
+    &&
     !triggered;
 
   const paused =
-    !alert.is_active &&
+    !alert.is_active
+    &&
     !triggered;
 
 
   return (
-    <article className="rounded-2xl border border-neutral-800 bg-neutral-900 p-6">
+    <article className="min-w-0 rounded-2xl border border-[#dccbc4] bg-[#fffaf7] p-4 shadow-sm sm:p-6">
 
-      <div className="flex items-start justify-between gap-4">
-
-        <div>
-          <p className="text-xs uppercase tracking-wide text-neutral-500">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#7f2a3c]">
             Alert
           </p>
 
-          <h3 className="mt-2 text-xl font-semibold">
-            {alert.product?.name ??
-              "Product alert"}
+          <h3 className="mt-2 break-words text-lg font-semibold text-[#332e34] sm:text-xl">
+            {
+              alert.product
+                ?.name
+              ??
+              "Product alert"
+            }
           </h3>
 
-          <p className="mt-1 text-sm text-neutral-500">
-            {alert.variant?.sku ??
-              alert.variant_id}
+          <p className="mt-1 break-all text-xs text-[#8c777c] sm:text-sm">
+            {
+              alert.variant
+                ?.sku
+              ??
+              alert.variant_id
+            }
           </p>
         </div>
 
 
-        <span className="rounded-full border border-neutral-700 px-3 py-1 text-xs">
-
-          {triggered
-            ? "Triggered"
-            : active
-              ? "Watching"
-              : "Paused"}
-
+        <span className="w-fit shrink-0 rounded-full bg-[#eeeafb] px-3 py-1.5 text-xs font-semibold text-[#5f62c7]">
+          {
+            triggered
+              ? "Triggered"
+              : active
+                ? "Watching"
+                : "Paused"
+          }
         </span>
-
       </div>
 
 
-      <div className="mt-5 space-y-2 text-sm">
+      <div className="mt-5 grid gap-3 sm:grid-cols-2">
+        <div className="rounded-xl bg-white p-3">
+          <span className="block text-xs text-[#8c777c]">
+            Alert type
+          </span>
 
-        <p>
-          Alert type:{" "}
-          <strong>
-            {alertLabel(
-              alert.alert_type
-            )}
+          <strong className="mt-1 block text-[#332e34]">
+            {
+              alertLabel(
+                alert.alert_type
+              )
+            }
           </strong>
-        </p>
+        </div>
 
 
-        {alert.target_price != null && (
-          <p>
-            Target:{" "}
-            <strong>
-              {money(
-                alert.target_price
-              )}
-            </strong>
-          </p>
-        )}
+        {
+          alert.target_price
+          != null
+          && (
+            <div className="rounded-xl bg-white p-3">
+              <span className="block text-xs text-[#8c777c]">
+                Target
+              </span>
+
+              <strong className="mt-1 block text-[#332e34]">
+                {
+                  money(
+                    alert.target_price
+                  )
+                }
+              </strong>
+            </div>
+          )
+        }
 
 
-        {alert.effective_price != null && (
-          <p>
-            Current price:{" "}
-            <strong>
-              {money(
-                alert.effective_price
-              )}
-            </strong>
-          </p>
-        )}
+        {
+          alert.effective_price
+          != null
+          && (
+            <div className="rounded-xl bg-white p-3">
+              <span className="block text-xs text-[#8c777c]">
+                Current price
+              </span>
 
+              <strong className="mt-1 block text-[#332e34]">
+                {
+                  money(
+                    alert.effective_price
+                  )
+                }
+              </strong>
+            </div>
+          )
+        }
       </div>
 
 
-      {triggered && (
-        <div className="mt-5 rounded-xl border border-green-900 bg-green-950/30 p-4 text-green-300">
-
-          Alert condition matched.
-
-        </div>
-      )}
-
-
-      {paused && (
-        <div className="mt-5 rounded-xl border border-neutral-700 bg-neutral-950 p-4 text-neutral-400">
-
-          Alert monitoring is paused.
-
-        </div>
-      )}
+      {
+        triggered
+        && (
+          <div className="mt-5 rounded-xl border border-[#cbdccf] bg-[#f0f8f2] p-4 text-sm leading-6 text-[#42664a]">
+            Alert condition matched.
+          </div>
+        )
+      }
 
 
-      <div className="mt-6 flex flex-wrap gap-3">
-
-        {active && (
-          <button
-            type="button"
-            disabled={busy}
-            onClick={() => {
-              onPause(
-                alert.id
-              );
-            }}
-            className="rounded-lg border border-neutral-700 px-4 py-2 hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {busy
-              ? "Working..."
-              : "Pause"}
-          </button>
-        )}
+      {
+        paused
+        && (
+          <div className="mt-5 rounded-xl border border-[#d8c8c1] bg-white p-4 text-sm leading-6 text-[#756369]">
+            Alert monitoring is paused.
+          </div>
+        )
+      }
 
 
-        {paused && (
-          <button
-            type="button"
-            disabled={busy}
-            onClick={() => {
-              onResume(
-                alert.id
-              );
-            }}
-            className="rounded-lg border border-neutral-700 px-4 py-2 hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {busy
-              ? "Working..."
-              : "Resume"}
-          </button>
-        )}
+      <div className="mt-5 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+        {
+          active
+          && (
+            <button
+              type="button"
+              disabled={
+                busy
+              }
+              onClick={() => {
+                onPause(
+                  alert.id
+                );
+              }}
+              className="min-h-11 w-full rounded-xl border border-[#7f2a3c] px-4 py-2.5 text-sm font-semibold text-[#7f2a3c] transition hover:bg-[#f7e9e8] disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
+            >
+              {
+                busy
+                  ? "Working..."
+                  : "Pause"
+              }
+            </button>
+          )
+        }
 
 
-        {!triggered && (
-          <button
-            type="button"
-            disabled={busy}
-            onClick={() => {
-              onDelete(
-                alert.id
-              );
-            }}
-            className="rounded-lg border border-red-900 px-4 py-2 text-red-300 hover:bg-red-950/30 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {busy
-              ? "Working..."
-              : "Delete"}
-          </button>
-        )}
+        {
+          paused
+          && (
+            <button
+              type="button"
+              disabled={
+                busy
+              }
+              onClick={() => {
+                onResume(
+                  alert.id
+                );
+              }}
+              className="min-h-11 w-full rounded-xl border border-[#7779de] px-4 py-2.5 text-sm font-semibold text-[#5f62c7] transition hover:bg-[#f0effc] disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
+            >
+              {
+                busy
+                  ? "Working..."
+                  : "Resume"
+              }
+            </button>
+          )
+        }
 
+
+        {
+          !triggered
+          && (
+            <button
+              type="button"
+              disabled={
+                busy
+              }
+              onClick={() => {
+                onDelete(
+                  alert.id
+                );
+              }}
+              className="min-h-11 w-full rounded-xl border border-[#e4aaa3] px-4 py-2.5 text-sm font-semibold text-[#b33d34] transition hover:bg-[#fff2ef] disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
+            >
+              {
+                busy
+                  ? "Working..."
+                  : "Delete"
+              }
+            </button>
+          )
+        }
       </div>
-
     </article>
   );
 }

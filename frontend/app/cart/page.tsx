@@ -1,7 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import Link from "next/link";
+
+import {
+  useEffect,
+  useState,
+} from "react";
 
 import CartSummaryBlock from "@/components/chat-blocks/CartSummaryBlock";
 
@@ -14,27 +18,75 @@ import {
 } from "@/lib/api";
 
 
+const SHOP_LINKS = [
+  {
+    href: "/wishlist",
+    label: "Wishlist",
+  },
+  {
+    href: "/reservations",
+    label: "Reservations",
+  },
+  {
+    href: "/smart-cart",
+    label: "Smart Cart",
+  },
+  {
+    href: "/alerts",
+    label: "Alerts",
+  },
+  {
+    href: "/orders",
+    label: "Orders",
+  },
+];
+
+
 export default function CartPage() {
-  const [cart, setCart] =
-    useState<CartResponse | null>(null);
+  const [
+    cart,
+    setCart,
+  ] =
+    useState<CartResponse | null>(
+      null
+    );
 
-  const [error, setError] =
-    useState<string | null>(null);
+  const [
+    error,
+    setError,
+  ] =
+    useState<string | null>(
+      null
+    );
 
-  const [busyItemId, setBusyItemId] =
-    useState<string | null>(null);
+  const [
+    busyItemId,
+    setBusyItemId,
+  ] =
+    useState<string | null>(
+      null
+    );
 
-  const [variantId, setVariantId] =
+  const [
+    variantId,
+    setVariantId,
+  ] =
     useState("");
 
-  const [quantity, setQuantity] =
+  const [
+    quantity,
+    setQuantity,
+  ] =
     useState(1);
 
 
   async function loadCart() {
     try {
       setError(null);
-      setCart(await getCart());
+
+      setCart(
+        await getCart()
+      );
     } catch (error) {
       setError(
         error instanceof Error
@@ -46,10 +98,10 @@ export default function CartPage() {
 
 
   useEffect(() => {
-  queueMicrotask(() => {
-    void loadCart();
-  });
-}, []);
+    queueMicrotask(() => {
+      void loadCart();
+    });
+  }, []);
 
 
   async function handleAdd() {
@@ -60,12 +112,18 @@ export default function CartPage() {
     try {
       setError(null);
 
-      const result = await addCartItem(
-        variantId.trim(),
-        quantity
+      const result =
+        await addCartItem(
+          variantId.trim(),
+          quantity
+        );
+
+      setCart(
+        result
       );
 
-      setCart(result);
+      setVariantId("");
+      setQuantity(1);
     } catch (error) {
       setError(
         error instanceof Error
@@ -81,7 +139,11 @@ export default function CartPage() {
     newQuantity: number
   ) {
     try {
-      setBusyItemId(itemId);
+      setError(null);
+
+      setBusyItemId(
+        itemId
+      );
 
       const result =
         await updateCartItem(
@@ -89,7 +151,15 @@ export default function CartPage() {
           newQuantity
         );
 
-      setCart(result);
+      setCart(
+        result
+      );
+    } catch (error) {
+      setError(
+        error instanceof Error
+          ? error.message
+          : "Unable to update quantity"
+      );
     } finally {
       setBusyItemId(null);
     }
@@ -100,10 +170,23 @@ export default function CartPage() {
     itemId: string
   ) {
     try {
-      setBusyItemId(itemId);
+      setError(null);
 
-      await removeCartItem(itemId);
+      setBusyItemId(
+        itemId
+      );
+
+      await removeCartItem(
+        itemId
+      );
+
       await loadCart();
+    } catch (error) {
+      setError(
+        error instanceof Error
+          ? error.message
+          : "Unable to remove item"
+      );
     } finally {
       setBusyItemId(null);
     }
@@ -111,86 +194,111 @@ export default function CartPage() {
 
 
   return (
-    <main className="min-h-screen bg-neutral-950 text-white">
-      <div className="mx-auto max-w-3xl p-6 md:p-10">
+    <main className="min-h-[calc(100dvh-4rem)] overflow-x-hidden bg-[#f1e6de] text-[#2c1c20]">
+      <div className="mx-auto w-full max-w-5xl px-4 py-6 sm:px-6 sm:py-8 lg:px-8 lg:py-10">
 
-        <div className="mb-8 flex items-center justify-between">
-          <div>
-            <p className="text-sm text-neutral-500">
-              Retailigent
-            </p>
+        <header className="mb-6 sm:mb-8">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[#7f2a3c]">
+                Shopping workspace
+              </p>
 
-            <h1 className="text-3xl font-semibold">
-              Cart
-            </h1>
+              <h1 className="mt-2 text-3xl font-bold sm:text-4xl">
+                Your cart
+              </h1>
+
+              <p className="mt-2 max-w-2xl text-sm leading-6 text-[#756369] sm:text-base">
+                Review quantities and current availability
+                before continuing your shopping journey.
+              </p>
+            </div>
+
+            <Link
+              href="/chat"
+              className="inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-[#7f2a3c] px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-[#682132] sm:w-auto"
+            >
+              Ask assistant
+            </Link>
           </div>
 
-          <nav className="flex gap-4 text-sm text-neutral-300">
-            <Link
-              href="/wishlist"
-              className="underline"
-            >
-              Wishlist
-            </Link>
 
-            <Link
-              href="/reservations"
-              className="underline"
-            >
-              Reservations
-            </Link>
-
-            <Link
-  href="/smart-cart"
-  className="underline"
->
-  Smart Cart
-</Link>
-
-<Link
-  href="/alerts"
-  className="underline"
->
-  Alerts
-</Link>
-
-            <Link
-              href="/orders"
-              className="underline"
-            >
-              Orders
-            </Link>
-          </nav>
-        </div>
-
-        {error && (
-          <div className="mb-6 rounded-xl border border-red-900 bg-red-950/40 p-4 text-red-300">
-            {error}
-          </div>
-        )}
-
-        <div className="mb-8 rounded-2xl border border-neutral-800 bg-neutral-900 p-5">
-          <p className="text-sm font-medium">
-            Temporary Phase 6 test control
-          </p>
-
-          <input
-            value={variantId}
-            onChange={(event) =>
-              setVariantId(
-                event.target.value
+          <nav className="mt-5 flex max-w-full gap-2 overflow-x-auto pb-1 sm:flex-wrap sm:overflow-visible">
+            {
+              SHOP_LINKS.map(
+                (
+                  link
+                ) => (
+                  <Link
+                    key={
+                      link.href
+                    }
+                    href={
+                      link.href
+                    }
+                    className="shrink-0 rounded-full border border-[#d8c8c1] bg-[#fffaf7] px-4 py-2 text-sm font-medium text-[#5f4d52] transition hover:border-[#7779de] hover:text-[#5f62c7]"
+                  >
+                    {
+                      link.label
+                    }
+                  </Link>
+                )
               )
             }
-            placeholder="Variant UUID"
-            className="mt-4 w-full rounded-lg border border-neutral-700 bg-neutral-950 p-3"
-          />
+          </nav>
+        </header>
 
-          <div className="mt-3 flex gap-3">
+
+        {
+          error
+          && (
+            <div className="mb-6 rounded-2xl border border-[#e4aaa3] bg-[#fff2ef] px-4 py-3 text-sm text-[#9b352e]">
+              {
+                error
+              }
+            </div>
+          )
+        }
+
+
+        <section className="mb-6 rounded-2xl border border-[#dccbc4] bg-[#fffaf7] p-4 shadow-sm sm:mb-8 sm:p-6">
+          <div>
+            <p className="text-sm font-semibold text-[#332e34]">
+              Developer test control
+            </p>
+
+            <p className="mt-1 text-xs leading-5 text-[#8c777c]">
+              Add a variant directly using its UUID.
+              This control can be removed for the final demo.
+            </p>
+          </div>
+
+
+          <div className="mt-4 grid gap-3 sm:grid-cols-[minmax(0,1fr)_7rem_auto]">
+            <input
+              value={
+                variantId
+              }
+              onChange={(
+                event
+              ) => {
+                setVariantId(
+                  event.target.value
+                );
+              }}
+              placeholder="Variant UUID"
+              className="min-h-11 min-w-0 rounded-xl border border-[#d8c8c1] bg-white px-3 py-2.5 text-base outline-none transition placeholder:text-[#ad999e] focus:border-[#7779de] sm:text-sm"
+            />
+
             <input
               type="number"
               min={1}
-              value={quantity}
-              onChange={(event) =>
+              value={
+                quantity
+              }
+              onChange={(
+                event
+              ) => {
                 setQuantity(
                   Math.max(
                     1,
@@ -198,37 +306,52 @@ export default function CartPage() {
                       event.target.value
                     )
                   )
-                )
-              }
-              className="w-28 rounded-lg border border-neutral-700 bg-neutral-950 p-3"
+                );
+              }}
+              aria-label="Quantity"
+              className="min-h-11 w-full rounded-xl border border-[#d8c8c1] bg-white px-3 py-2.5 text-base outline-none transition focus:border-[#7779de] sm:text-sm"
             />
 
             <button
-              onClick={handleAdd}
-              className="rounded-lg bg-white px-5 text-black"
+              type="button"
+              onClick={
+                handleAdd
+              }
+              disabled={
+                !variantId.trim()
+              }
+              className="min-h-11 rounded-xl bg-[#ce4d42] px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-[#ad3d34] disabled:cursor-not-allowed disabled:opacity-40"
             >
               Add to cart
             </button>
           </div>
-        </div>
+        </section>
 
-        {!cart ? (
-          <p className="text-neutral-400">
-            Loading cart...
-          </p>
-        ) : (
-          <CartSummaryBlock
-            data={cart}
-            busyItemId={busyItemId}
-            onQuantityChange={
-              handleQuantityChange
-            }
-            onRemove={handleRemove}
-          />
-        )}
 
-        
-
+        {
+          !cart
+            ? (
+              <div className="rounded-2xl border border-[#dccbc4] bg-[#fffaf7] p-5 text-sm text-[#756369] shadow-sm">
+                Loading cart...
+              </div>
+            )
+            : (
+              <CartSummaryBlock
+                data={
+                  cart
+                }
+                busyItemId={
+                  busyItemId
+                }
+                onQuantityChange={
+                  handleQuantityChange
+                }
+                onRemove={
+                  handleRemove
+                }
+              />
+            )
+        }
       </div>
     </main>
   );

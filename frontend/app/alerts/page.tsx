@@ -1,12 +1,12 @@
 "use client";
 
+import Link from "next/link";
+
 import {
   useCallback,
   useEffect,
   useState,
 } from "react";
-
-import Link from "next/link";
 
 import AlertBlock from "@/components/chat-blocks/AlertBlock";
 
@@ -21,120 +21,175 @@ import {
 } from "@/lib/api";
 
 
-
-
 export default function AlertsPage() {
-  const [data, setData] =
+  const [
+    data,
+    setData,
+  ] =
     useState<AlertListResponse | null>(
       null
     );
 
-  const [variantId, setVariantId] =
+  const [
+    variantId,
+    setVariantId,
+  ] =
     useState("");
 
-  const [alertType, setAlertType] =
+  const [
+    alertType,
+    setAlertType,
+  ] =
     useState<AlertType>(
       "price_drop"
     );
 
-  const [targetPrice, setTargetPrice] =
+  const [
+    targetPrice,
+    setTargetPrice,
+  ] =
     useState("");
 
-  const [loading, setLoading] =
+  const [
+    loading,
+    setLoading,
+  ] =
     useState(true);
 
-  const [busy, setBusy] =
-    useState<string | null>(null);
+  const [
+    busy,
+    setBusy,
+  ] =
+    useState<string | null>(
+      null
+    );
 
-  const [error, setError] =
-    useState<string | null>(null);
+  const [
+    error,
+    setError,
+  ] =
+    useState<string | null>(
+      null
+    );
 
 
-  const loadAlerts = useCallback(
-    async (silent = false) => {
-      try {
-        if (!silent) {
-          setLoading(true);
-        }
+  const loadAlerts =
+    useCallback(
+      async (
+        silent = false
+      ) => {
+        try {
+          if (!silent) {
+            setLoading(
+              true
+            );
+          }
 
-        const result =
-          await getAlerts();
+          const result =
+            await getAlerts();
 
-        setData(result);
-
-        if (!silent) {
-          setError(null);
-        }
-
-      } catch (error) {
-        if (!silent) {
-          setError(
-            error instanceof Error
-              ? error.message
-              : "Unable to load alerts."
+          setData(
+            result
           );
-        }
 
-      } finally {
-        if (!silent) {
-          setLoading(false);
+          if (!silent) {
+            setError(
+              null
+            );
+          }
+        } catch (error) {
+          if (!silent) {
+            setError(
+              error instanceof Error
+                ? error.message
+                : "Unable to load alerts."
+            );
+          }
+        } finally {
+          if (!silent) {
+            setLoading(
+              false
+            );
+          }
         }
-      }
-    },
-    []
-  );
+      },
+      []
+    );
 
 
   useEffect(() => {
-  queueMicrotask(() => {
-    void loadAlerts();
-  });
+    queueMicrotask(() => {
+      void loadAlerts();
+    });
 
-  // Poll every 5 seconds so triggered
-  // alerts update without refreshing.
-  const intervalId =
-    window.setInterval(() => {
-      void loadAlerts(true);
-    }, 5000);
+    const intervalId =
+      window.setInterval(
+        () => {
+          void loadAlerts(
+            true
+          );
+        },
+        5000
+      );
 
-  return () => {
-    window.clearInterval(
-      intervalId
-    );
-  };
-}, [loadAlerts]);
+    return () => {
+      window.clearInterval(
+        intervalId
+      );
+    };
+  }, [
+    loadAlerts,
+  ]);
+
 
   async function handleCreate() {
     if (!variantId.trim()) {
       setError(
         "Variant UUID is required."
       );
+
       return;
     }
 
     if (
-      alertType === "price_drop" &&
-      targetPrice.trim() === ""
+      alertType
+      === "price_drop"
+      &&
+      targetPrice.trim()
+      === ""
     ) {
       setError(
         "Price-drop alerts require a target price."
       );
+
       return;
     }
 
     if (
-      targetPrice.trim() !== "" &&
-      Number(targetPrice) < 0
+      targetPrice.trim()
+      !== ""
+      &&
+      Number(
+        targetPrice
+      ) < 0
     ) {
       setError(
         "Target price cannot be negative."
       );
+
       return;
     }
 
+
     try {
-      setBusy("create");
-      setError(null);
+      setBusy(
+        "create"
+      );
+
+      setError(
+        null
+      );
+
 
       await createAlert({
         variant_id:
@@ -144,26 +199,32 @@ export default function AlertsPage() {
           alertType,
 
         target_price:
-          alertType ===
-            "price_drop"
-            ? Number(targetPrice)
+          alertType
+          === "price_drop"
+            ? Number(
+                targetPrice
+              )
             : null,
       });
+
 
       setVariantId("");
       setTargetPrice("");
 
-      await loadAlerts(true);
 
+      await loadAlerts(
+        true
+      );
     } catch (error) {
       setError(
         error instanceof Error
           ? error.message
           : "Unable to create alert."
       );
-
     } finally {
-      setBusy(null);
+      setBusy(
+        null
+      );
     }
   }
 
@@ -172,24 +233,31 @@ export default function AlertsPage() {
     alertId: string
   ) {
     try {
-      setBusy(alertId);
-      setError(null);
+      setBusy(
+        alertId
+      );
+
+      setError(
+        null
+      );
 
       await pauseAlert(
         alertId
       );
 
-      await loadAlerts(true);
-
+      await loadAlerts(
+        true
+      );
     } catch (error) {
       setError(
         error instanceof Error
           ? error.message
           : "Unable to pause alert."
       );
-
     } finally {
-      setBusy(null);
+      setBusy(
+        null
+      );
     }
   }
 
@@ -198,24 +266,31 @@ export default function AlertsPage() {
     alertId: string
   ) {
     try {
-      setBusy(alertId);
-      setError(null);
+      setBusy(
+        alertId
+      );
+
+      setError(
+        null
+      );
 
       await resumeAlert(
         alertId
       );
 
-      await loadAlerts(true);
-
+      await loadAlerts(
+        true
+      );
     } catch (error) {
       setError(
         error instanceof Error
           ? error.message
           : "Unable to resume alert."
       );
-
     } finally {
-      setBusy(null);
+      setBusy(
+        null
+      );
     }
   }
 
@@ -224,129 +299,146 @@ export default function AlertsPage() {
     alertId: string
   ) {
     try {
-      setBusy(alertId);
-      setError(null);
+      setBusy(
+        alertId
+      );
+
+      setError(
+        null
+      );
 
       await deleteAlert(
         alertId
       );
 
-      await loadAlerts(true);
-
+      await loadAlerts(
+        true
+      );
     } catch (error) {
       setError(
         error instanceof Error
           ? error.message
           : "Unable to delete alert."
       );
-
     } finally {
-      setBusy(null);
+      setBusy(
+        null
+      );
     }
   }
 
 
   return (
-    <main className="min-h-screen bg-black px-6 py-10 text-white">
+    <main className="min-h-[calc(100dvh-4rem)] overflow-x-hidden bg-[#f1e6de] text-[#2c1c20]">
+      <div className="mx-auto w-full max-w-5xl px-4 py-6 sm:px-6 sm:py-8 lg:px-8 lg:py-10">
 
-      <div className="mx-auto max-w-4xl">
+        <header className="mb-6 sm:mb-8">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[#7f2a3c]">
+                Product monitoring
+              </p>
 
-        <div className="mb-8 flex flex-col gap-5 md:flex-row md:items-start md:justify-between">
+              <h1 className="mt-2 text-3xl font-bold sm:text-4xl">
+                Product Alerts
+              </h1>
 
-          <div>
+              <p className="mt-2 max-w-2xl text-sm leading-6 text-[#756369] sm:text-base">
+                Watch products for price drops,
+                restocks, and sale events.
+              </p>
+            </div>
 
-            <p className="text-sm uppercase tracking-widest text-neutral-500">
-              Retailigent
-            </p>
-
-            <h1 className="mt-2 text-3xl font-semibold">
-              Product Alerts
-            </h1>
-
-            <p className="mt-2 max-w-xl text-neutral-400">
-              Watch products for price drops,
-              restocks, and sale events.
-            </p>
-
+            <Link
+              href="/chat"
+              className="inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-[#7f2a3c] px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-[#682132] sm:w-auto"
+            >
+              Ask assistant
+            </Link>
           </div>
 
 
-          <nav className="flex flex-wrap gap-4 text-sm text-neutral-300">
-
+          <nav className="mt-5 flex gap-2 overflow-x-auto pb-1 sm:flex-wrap sm:overflow-visible">
             <Link
               href="/cart"
-              className="underline hover:text-white"
+              className="shrink-0 rounded-full border border-[#d8c8c1] bg-[#fffaf7] px-4 py-2 text-sm font-medium text-[#5f4d52]"
             >
               Cart
             </Link>
 
             <Link
               href="/smart-cart"
-              className="underline hover:text-white"
+              className="shrink-0 rounded-full border border-[#d8c8c1] bg-[#fffaf7] px-4 py-2 text-sm font-medium text-[#5f4d52]"
             >
               Smart Cart
             </Link>
 
             <Link
               href="/orders"
-              className="underline hover:text-white"
+              className="shrink-0 rounded-full border border-[#d8c8c1] bg-[#fffaf7] px-4 py-2 text-sm font-medium text-[#5f4d52]"
             >
               Orders
             </Link>
-
           </nav>
-
-        </div>
-
-
-        {error && (
-          <div className="mb-6 rounded-xl border border-red-900 bg-red-950/30 p-4 text-red-300">
-            {error}
-          </div>
-        )}
+        </header>
 
 
-        <section className="mb-10 rounded-2xl border border-neutral-800 bg-neutral-900 p-6">
+        {
+          error
+          && (
+            <div className="mb-6 rounded-2xl border border-[#e4aaa3] bg-[#fff2ef] px-4 py-3 text-sm text-[#9b352e]">
+              {
+                error
+              }
+            </div>
+          )
+        }
 
-          <h2 className="text-xl font-semibold">
+
+        <section className="mb-8 rounded-2xl border border-[#dccbc4] bg-[#fffaf7] p-4 shadow-sm sm:p-6">
+          <h2 className="text-xl font-semibold text-[#332e34]">
             Create alert
           </h2>
 
-          <p className="mt-2 text-sm text-neutral-400">
-            Choose what Retailigent should
-            watch for.
+          <p className="mt-2 text-sm leading-6 text-[#756369]">
+            Choose what Retailigent should watch for.
           </p>
 
 
           <div className="mt-6">
-
-            <label className="block text-sm font-medium">
+            <label className="block text-sm font-medium text-[#332e34]">
               Variant UUID
             </label>
 
             <input
-              value={variantId}
-              onChange={(event) => {
+              value={
+                variantId
+              }
+              onChange={(
+                event
+              ) => {
                 setVariantId(
                   event.target.value
                 );
               }}
-              placeholder="f1000000-0000-0000-0000-000000000003"
-              className="mt-2 w-full rounded-lg border border-neutral-700 bg-neutral-950 p-3 outline-none focus:border-neutral-500"
+              placeholder="Variant UUID"
+              className="mt-2 min-h-11 w-full min-w-0 rounded-xl border border-[#d8c8c1] bg-white px-3 py-2.5 text-base outline-none transition placeholder:text-[#ad999e] focus:border-[#7779de] sm:text-sm"
             />
-
           </div>
 
 
           <div className="mt-5">
-
-            <label className="block text-sm font-medium">
+            <label className="block text-sm font-medium text-[#332e34]">
               Alert type
             </label>
 
             <select
-              value={alertType}
-              onChange={(event) => {
+              value={
+                alertType
+              }
+              onChange={(
+                event
+              ) => {
                 const value =
                   event.target
                     .value as AlertType;
@@ -356,15 +448,14 @@ export default function AlertsPage() {
                 );
 
                 if (
-                  value !==
-                  "price_drop"
+                  value
+                  !== "price_drop"
                 ) {
                   setTargetPrice("");
                 }
               }}
-              className="mt-2 w-full rounded-lg border border-neutral-700 bg-neutral-950 p-3 outline-none focus:border-neutral-500"
+              className="mt-2 min-h-11 w-full rounded-xl border border-[#d8c8c1] bg-white px-3 py-2.5 text-base outline-none focus:border-[#7779de] sm:text-sm"
             >
-
               <option value="price_drop">
                 Price drop
               </option>
@@ -376,155 +467,176 @@ export default function AlertsPage() {
               <option value="sale">
                 Sale
               </option>
-
             </select>
-
           </div>
 
 
-          {alertType ===
-            "price_drop" && (
-            <div className="mt-5">
+          {
+            alertType
+            === "price_drop"
+            && (
+              <div className="mt-5">
+                <label className="block text-sm font-medium text-[#332e34]">
+                  Target price
+                </label>
 
-              <label className="block text-sm font-medium">
-                Target price
-              </label>
+                <input
+                  type="number"
+                  min={0}
+                  value={
+                    targetPrice
+                  }
+                  onChange={(
+                    event
+                  ) => {
+                    setTargetPrice(
+                      event.target.value
+                    );
+                  }}
+                  placeholder="3000"
+                  className="mt-2 min-h-11 w-full rounded-xl border border-[#d8c8c1] bg-white px-3 py-2.5 text-base outline-none focus:border-[#7779de] sm:text-sm"
+                />
 
-              <input
-                type="number"
-                min={0}
-                value={targetPrice}
-                onChange={(event) => {
-                  setTargetPrice(
-                    event.target.value
-                  );
-                }}
-                placeholder="3000"
-                className="mt-2 w-full rounded-lg border border-neutral-700 bg-neutral-950 p-3 outline-none focus:border-neutral-500"
-              />
-
-              <p className="mt-2 text-xs text-neutral-500">
-                The alert triggers when the
-                effective price reaches this
-                amount or lower.
-              </p>
-
-            </div>
-          )}
-
-
-          {alertType ===
-            "restock" && (
-            <div className="mt-5 rounded-xl border border-neutral-700 bg-neutral-950 p-4 text-sm text-neutral-300">
-
-              Retailigent will notify you when
-              this variant is restocked.
-
-            </div>
-          )}
+                <p className="mt-2 text-xs leading-5 text-[#8c777c]">
+                  The alert triggers when the effective
+                  price reaches this amount or lower.
+                </p>
+              </div>
+            )
+          }
 
 
-          {alertType ===
-            "sale" && (
-            <div className="mt-5 rounded-xl border border-neutral-700 bg-neutral-950 p-4 text-sm text-neutral-300">
+          {
+            alertType
+            === "restock"
+            && (
+              <div className="mt-5 rounded-xl border border-[#d8c8c1] bg-white p-4 text-sm leading-6 text-[#756369]">
+                Retailigent will notify you when this
+                variant is restocked.
+              </div>
+            )
+          }
 
-              Retailigent will notify you when
-              a sale starts for this variant.
 
-            </div>
-          )}
+          {
+            alertType
+            === "sale"
+            && (
+              <div className="mt-5 rounded-xl border border-[#d8c8c1] bg-white p-4 text-sm leading-6 text-[#756369]">
+                Retailigent will notify you when a sale
+                starts for this variant.
+              </div>
+            )
+          }
 
 
           <button
             type="button"
             disabled={
-              busy === "create"
+              busy
+              === "create"
             }
             onClick={() => {
               void handleCreate();
             }}
-            className="mt-6 rounded-lg bg-white px-5 py-3 font-medium text-black transition hover:bg-neutral-200 disabled:cursor-not-allowed disabled:opacity-50"
+            className="mt-6 min-h-11 w-full rounded-xl bg-[#ce4d42] px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-[#ad3d34] disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
           >
-            {busy === "create"
-              ? "Creating..."
-              : "Create alert"}
+            {
+              busy
+              === "create"
+                ? "Creating..."
+                : "Create alert"
+            }
           </button>
-
         </section>
 
 
         <section>
-
-          <div className="mb-4 flex items-center justify-between">
-
-            <h2 className="text-xl font-semibold">
+          <div className="mb-4 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+            <h2 className="text-xl font-semibold text-[#332e34]">
               Your alerts
             </h2>
 
-            <span className="text-xs text-neutral-500">
+            <span className="text-xs text-[#8c777c]">
               Auto-refreshes every 5 seconds
             </span>
-
           </div>
 
 
-          {loading && (
-            <p className="text-neutral-400">
-              Loading alerts...
-            </p>
-          )}
+          {
+            loading
+            && (
+              <div className="rounded-2xl border border-[#dccbc4] bg-[#fffaf7] p-5 text-sm text-[#756369] shadow-sm">
+                Loading alerts...
+              </div>
+            )
+          }
 
 
-          {!loading &&
-            !error &&
-            data?.items.length === 0 && (
-              <div className="rounded-2xl border border-neutral-800 bg-neutral-900 p-6">
-
-                <h3 className="text-lg font-semibold">
+          {
+            !loading
+            &&
+            !error
+            &&
+            data?.items.length
+            === 0
+            && (
+              <div className="rounded-2xl border border-[#dccbc4] bg-[#fffaf7] p-5 shadow-sm sm:p-6">
+                <h3 className="text-lg font-semibold text-[#332e34]">
                   No alerts yet
                 </h3>
 
-                <p className="mt-2 text-neutral-400">
+                <p className="mt-2 text-sm leading-6 text-[#756369]">
                   Create your first alert above.
                 </p>
-
               </div>
-            )}
+            )
+          }
 
 
-          {!loading &&
-            data &&
-            data.items.length > 0 && (
-              <div className="space-y-5">
-
-                {data.items.map(
-                  (alert) => (
-                    <AlertBlock
-                      key={alert.id}
-                      alert={alert}
-                      busy={
-                        busy === alert.id
-                      }
-                      onPause={
-                        handlePause
-                      }
-                      onResume={
-                        handleResume
-                      }
-                      onDelete={
-                        handleDelete
-                      }
-                    />
+          {
+            !loading
+            &&
+            data
+            &&
+            data.items.length
+            > 0
+            && (
+              <div className="space-y-4 sm:space-y-5">
+                {
+                  data.items.map(
+                    (
+                      alert
+                    ) => (
+                      <AlertBlock
+                        key={
+                          alert.id
+                        }
+                        alert={
+                          alert
+                        }
+                        busy={
+                          busy
+                          === alert.id
+                        }
+                        onPause={
+                          handlePause
+                        }
+                        onResume={
+                          handleResume
+                        }
+                        onDelete={
+                          handleDelete
+                        }
+                      />
+                    )
                   )
-                )}
-
+                }
               </div>
-            )}
-
+            )
+          }
         </section>
-
       </div>
-
     </main>
   );
 }
