@@ -111,7 +111,7 @@ class MemoryAgent:
     The LLM never receives direct database access.
     """
 
-    agent_key = "memory_context_agent"
+    agent_key = "memory_context"
 
     def load_context(
         self,

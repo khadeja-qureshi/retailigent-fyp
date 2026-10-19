@@ -9,11 +9,6 @@ from app.schemas.chat import (
 )
 
 
-# ============================================================================
-# Vocabulary
-# ============================================================================
-
-
 ROMAN_URDU_MARKERS = {
     "mujhe",
     "mujhay",
@@ -200,11 +195,6 @@ UUID_RE = re.compile(
 NUMBER = r"([0-9]+(?:\.[0-9]+)?)"
 
 
-# ============================================================================
-# Utility helpers
-# ============================================================================
-
-
 def _normalize(
     text: str,
 ) -> str:
@@ -258,11 +248,6 @@ def _parse_number(
     )
 
 
-# ============================================================================
-# Language
-# ============================================================================
-
-
 def detect_language(
     message: str,
 ) -> str:
@@ -299,11 +284,6 @@ def detect_language(
     return "english"
 
 
-# ============================================================================
-# Entity extraction
-# ============================================================================
-
-
 def _extract_variant_id(
     text: str,
 ) -> str | None:
@@ -320,7 +300,10 @@ def _extract_variant_id(
 def _extract_color(
     text: str,
 ) -> str | None:
-    for word, normalized in COLOR_ALIASES.items():
+    for (
+        word,
+        normalized,
+    ) in COLOR_ALIASES.items():
         if _has_phrase(
             text,
             word,
@@ -333,7 +316,10 @@ def _extract_color(
 def _extract_material(
     text: str,
 ) -> str | None:
-    for word, normalized in MATERIAL_ALIASES.items():
+    for (
+        word,
+        normalized,
+    ) in MATERIAL_ALIASES.items():
         if _has_phrase(
             text,
             word,
@@ -346,7 +332,10 @@ def _extract_material(
 def _extract_category(
     text: str,
 ) -> str | None:
-    for word, normalized in CATEGORY_ALIASES.items():
+    for (
+        word,
+        normalized,
+    ) in CATEGORY_ALIASES.items():
         if _has_phrase(
             text,
             word,
@@ -359,7 +348,10 @@ def _extract_category(
 def _extract_branch(
     text: str,
 ) -> str | None:
-    for word, normalized in BRANCH_ALIASES.items():
+    for (
+        word,
+        normalized,
+    ) in BRANCH_ALIASES.items():
         if _has_phrase(
             text,
             word,
@@ -372,7 +364,11 @@ def _extract_branch(
 def _extract_size(
     text: str,
 ) -> str | None:
-    size_match = re.search(
+    # Examples:
+    # "size M"
+    # "size medium"
+    # "size: XL"
+    size_first_match = re.search(
         r"\bsize\s*[:\-]?\s*"
         r"(xxl|xl|xs|s|m|l|"
         r"small|medium|large|"
@@ -382,45 +378,154 @@ def _extract_size(
         flags=re.IGNORECASE,
     )
 
-    if size_match:
-        raw = size_match.group(1).lower()
+    if size_first_match:
+        raw = (
+            size_first_match
+            .group(1)
+            .lower()
+        )
 
         return SIZE_ALIASES.get(
             raw
         )
 
-    short_match = re.search(
-        r"\b(?:kurta|shirt|dress|suit)"
-        r"\s+(xs|s|m|l|xl|xxl)\b",
+    # Examples:
+    # "medium size"
+    # "XL size"
+    # "in medium size"
+    size_last_match = re.search(
+        r"\b"
+        r"(xxl|xl|xs|s|m|l|"
+        r"small|medium|large|"
+        r"extra small|extra large)"
+        r"\s+size\b",
         text,
         flags=re.IGNORECASE,
     )
 
-    if short_match:
-        return short_match.group(1).upper()
+    if size_last_match:
+        raw = (
+            size_last_match
+            .group(1)
+            .lower()
+        )
+
+        return SIZE_ALIASES.get(
+            raw
+        )
+
+    # Examples:
+    # "kurta M"
+    # "shirt XL"
+    # "dress medium"
+    product_size_match = re.search(
+        r"\b"
+        r"(?:kurta|kurtas|"
+        r"shirt|shirts|"
+        r"dress|dresses|"
+        r"suit|suits)"
+        r"\s+"
+        r"(xxl|xl|xs|s|m|l|"
+        r"small|medium|large|"
+        r"extra small|extra large)"
+        r"\b",
+        text,
+        flags=re.IGNORECASE,
+    )
+
+    if product_size_match:
+        raw = (
+            product_size_match
+            .group(1)
+            .lower()
+        )
+
+        return SIZE_ALIASES.get(
+            raw
+        )
 
     return None
+
+
+def _extract_ordinals(
+    text: str,
+) -> list[int]:
+    matches: list[
+        tuple[int, int]
+    ] = []
+
+    for (
+        word,
+        ordinal,
+    ) in ORDINAL_ALIASES.items():
+        pattern = (
+            re.escape(word)
+            if " " in word
+            else (
+                rf"\b"
+                rf"{re.escape(word)}"
+                rf"\b"
+            )
+        )
+
+        for match in re.finditer(
+            pattern,
+            text,
+            flags=re.IGNORECASE,
+        ):
+            matches.append(
+                (
+                    match.start(),
+                    ordinal,
+                )
+            )
+
+    matches.sort(
+        key=lambda item:
+            item[0]
+    )
+
+    ordinals: list[int] = []
+
+    for (
+        _,
+        ordinal,
+    ) in matches:
+        if ordinal not in ordinals:
+            ordinals.append(
+                ordinal
+            )
+
+    return ordinals
 
 
 def _extract_ordinal(
     text: str,
 ) -> int | None:
-    for word, ordinal in ORDINAL_ALIASES.items():
-        if _has_phrase(
-            text,
-            word,
-        ):
-            return ordinal
+    ordinals = (
+        _extract_ordinals(
+            text
+        )
+    )
 
-    return None
+    if not ordinals:
+        return None
+
+    return ordinals[0]
 
 
 def _extract_quantity(
     text: str,
 ) -> int | None:
     patterns = [
-        r"\b(?:quantity|qty)\s*[:\-]?\s*(\d+)\b",
-        r"\b(\d+)\s*(?:items?|pieces?|pcs?|units?)\b",
+        (
+            r"\b(?:quantity|qty)"
+            r"\s*[:\-]?\s*(\d+)\b"
+        ),
+        (
+            r"\b(\d+)\s*"
+            r"(?:items?|pieces?|pcs?|units?)\b"
+        ),
         r"\bx\s*(\d+)\b",
     ]
 
@@ -533,9 +638,12 @@ def _extract_price_range(
         )
 
         if match:
-            min_price = _parse_number(
-                match.group(1)
+            min_price = (
+                _parse_number(
+                    match.group(1)
+                )
             )
+
             break
 
     for pattern in max_patterns:
@@ -546,9 +654,12 @@ def _extract_price_range(
         )
 
         if match:
-            max_price = _parse_number(
-                match.group(1)
+            max_price = (
+                _parse_number(
+                    match.group(1)
+                )
             )
+
             break
 
     return (
@@ -588,8 +699,10 @@ def _extract_target_price(
         )
 
         if match:
-            return _parse_number(
-                match.group(1)
+            return (
+                _parse_number(
+                    match.group(1)
+                )
             )
 
     return None
@@ -625,7 +738,8 @@ def _extract_authorization_mode(
                 "kharid",
             },
         )
-        and _contains_any(
+        and
+        _contains_any(
             text,
             {
                 "if",
@@ -664,36 +778,87 @@ def extract_entities(
         message
     )
 
-    min_price, max_price = _extract_price_range(text)
+    (
+        min_price,
+        max_price,
+    ) = _extract_price_range(
+        text
+    )
 
     target_price = None
 
     if intent == "smart_cart_create":
-        target_price = _extract_target_price(text)
+        target_price = (
+            _extract_target_price(
+                text
+            )
+        )
 
         if target_price is not None:
             max_price = None
 
     return ExtractedEntities(
-        variant_id=_extract_variant_id(text),
-        category=_extract_category(text),
-        color=_extract_color(text),
-        size=_extract_size(text),
-        material=_extract_material(text),
-        branch_name=_extract_branch(text),
+        variant_id=(
+            _extract_variant_id(
+                text
+            )
+        ),
+        category=(
+            _extract_category(
+                text
+            )
+        ),
+        color=(
+            _extract_color(
+                text
+            )
+        ),
+        size=(
+            _extract_size(
+                text
+            )
+        ),
+        material=(
+            _extract_material(
+                text
+            )
+        ),
+        branch_name=(
+            _extract_branch(
+                text
+            )
+        ),
         min_price=min_price,
         max_price=max_price,
-        target_price=target_price,
-        min_discount_percentage=_extract_discount(text),
-        quantity=_extract_quantity(text),
-        authorization_mode=_extract_authorization_mode(text),
-        ordinal_reference=_extract_ordinal(text),
+        target_price=(
+            target_price
+        ),
+        min_discount_percentage=(
+            _extract_discount(
+                text
+            )
+        ),
+        quantity=(
+            _extract_quantity(
+                text
+            )
+        ),
+        authorization_mode=(
+            _extract_authorization_mode(
+                text
+            )
+        ),
+        ordinal_reference=(
+            _extract_ordinal(
+                text
+            )
+        ),
+        ordinal_references=(
+            _extract_ordinals(
+                text
+            )
+        ),
     )
-
-
-# ============================================================================
-# Intent classification
-# ============================================================================
 
 
 def classify_intent(
@@ -724,7 +889,8 @@ def classify_intent(
                 flags=re.IGNORECASE,
             )
         )
-        and _contains_any(
+        and
+        _contains_any(
             text,
             {
                 "notify me",
@@ -761,7 +927,8 @@ def classify_intent(
                 "when",
             },
         )
-        and _contains_any(
+        and
+        _contains_any(
             text,
             {
                 "buy",
@@ -788,14 +955,16 @@ def classify_intent(
                 "cart me dalo",
             },
         )
-        or bool(
+        or
+        bool(
             re.search(
                 r"\badd\b.*\bto\s+(?:my\s+)?cart\b",
                 text,
                 flags=re.IGNORECASE,
             )
         )
-        or bool(
+        or
+        bool(
             re.search(
                 r"\bput\b.*\bin\s+(?:my\s+)?cart\b",
                 text,
@@ -817,16 +986,20 @@ def classify_intent(
                 "wishlist me",
             },
         )
-        or bool(
+        or
+        bool(
             re.search(
-                r"\badd\b.*\bto\s+(?:my\s+)?wishlist\b",
+                r"\badd\b.*\bto\s+"
+                r"(?:my\s+)?wishlist\b",
                 text,
                 flags=re.IGNORECASE,
             )
         )
-        or bool(
+        or
+        bool(
             re.search(
-                r"\bput\b.*\bin\s+(?:my\s+)?wishlist\b",
+                r"\bput\b.*\bin\s+"
+                r"(?:my\s+)?wishlist\b",
                 text,
                 flags=re.IGNORECASE,
             )
@@ -898,11 +1071,6 @@ def classify_intent(
     return "unknown"
 
 
-# ============================================================================
-# Clarification
-# ============================================================================
-
-
 def _has_context_reference(
     text: str,
 ) -> bool:
@@ -918,9 +1086,14 @@ def _has_item_reference(
 ) -> bool:
     return bool(
         entities.variant_id
-        or entities.ordinal_reference
-        or _has_context_reference(text)
-        or entities.category
+        or
+        entities.ordinal_reference
+        or
+        _has_context_reference(
+            text
+        )
+        or
+        entities.category
     )
 
 
@@ -945,7 +1118,8 @@ def _clarification_for(
 
     if (
         intent in needs_item
-        and not _has_item_reference(
+        and
+        not _has_item_reference(
             text,
             entities,
         )
@@ -962,8 +1136,10 @@ def _clarification_for(
 
     if (
         intent == "smart_cart_create"
-        and entities.target_price is None
-        and entities.min_discount_percentage is None
+        and
+        entities.target_price is None
+        and
+        entities.min_discount_percentage is None
     ):
         return (
             True,
@@ -976,7 +1152,8 @@ def _clarification_for(
 
     if (
         intent == "smart_cart_create"
-        and entities.authorization_mode is None
+        and
+        entities.authorization_mode is None
     ):
         return (
             True,
@@ -1031,16 +1208,22 @@ def _reliable_memory_value(
 
         try:
             confidence = float(
-                fact.get(
-                    "effective_confidence"
+                (
+                    fact.get(
+                        "effective_confidence"
+                    )
                 )
-                if fact.get(
-                    "effective_confidence"
+                if (
+                    fact.get(
+                        "effective_confidence"
+                    )
+                    is not None
                 )
-                is not None
-                else fact.get(
-                    "confidence",
-                    0.0,
+                else (
+                    fact.get(
+                        "confidence",
+                        0.0,
+                    )
                 )
             )
         except (
@@ -1062,50 +1245,58 @@ def _reliable_memory_value(
     return None
 
 
-# ============================================================================
-# Customer Interaction Agent
-# ============================================================================
-
-
 class CustomerInteractionAgent:
     """
     Deterministic customer-language layer.
 
-    This agent detects language, extracts intent/entities, handles
-    clarification wording, and composes final customer-facing text. It does
-    not determine authoritative prices, inventory, branch availability, or
-    purchase results. Those remain the responsibility of specialist agents
-    and database-backed services.
+    Detects language, intent and entities and
+    composes customer-facing responses. It does
+    not determine authoritative pricing, stock,
+    branch availability or purchase results.
     """
 
-    agent_key = "customer_interaction_agent"
+    agent_key = (
+        "customer_interaction_agent"
+    )
 
     def parse(
         self,
         message: str,
         *,
-        customer_context: dict | None = None,
+        customer_context: (
+            dict | None
+        ) = None,
     ) -> ParsedCustomerMessage:
-        raw_message = message.strip()
-
-        language = detect_language(
-            raw_message
+        raw_message = (
+            message.strip()
         )
 
-        intent = classify_intent(
-            raw_message
+        language = (
+            detect_language(
+                raw_message
+            )
         )
 
-        entities = extract_entities(
-            raw_message,
-            intent=intent,
+        intent = (
+            classify_intent(
+                raw_message
+            )
+        )
+
+        entities = (
+            extract_entities(
+                raw_message,
+                intent=intent,
+            )
         )
 
         context_used: dict = {}
 
         if (
-            intent == "product_search"
-            and entities.size is None
+            intent
+            == "product_search"
+            and
+            entities.size is None
         ):
             remembered_size = (
                 _reliable_memory_value(
@@ -1128,7 +1319,8 @@ class CustomerInteractionAgent:
 
                 if normalized_size:
                     entities = (
-                        entities.model_copy(
+                        entities
+                        .model_copy(
                             update={
                                 "size":
                                     normalized_size,
@@ -1153,18 +1345,24 @@ class CustomerInteractionAgent:
             entities=entities,
         )
 
-        return ParsedCustomerMessage(
-            raw_message=raw_message,
-            language=language,
-            intent=intent,
-            entities=entities,
-            context_used=context_used,
-            requires_clarification=(
-                requires_clarification
-            ),
-            clarification_question=(
-                clarification_question
-            ),
+        return (
+            ParsedCustomerMessage(
+                raw_message=(
+                    raw_message
+                ),
+                language=language,
+                intent=intent,
+                entities=entities,
+                context_used=(
+                    context_used
+                ),
+                requires_clarification=(
+                    requires_clarification
+                ),
+                clarification_question=(
+                    clarification_question
+                ),
+            )
         )
 
     def compose_generic_clarification(
@@ -1180,7 +1378,10 @@ class CustomerInteractionAgent:
                 "aap kya karna chahte hain?"
             )
 
-        return "Could you clarify what you mean?"
+        return (
+            "Could you clarify "
+            "what you mean?"
+        )
 
     def compose_search_response(
         self,
@@ -1213,17 +1414,17 @@ class CustomerInteractionAgent:
             }:
                 return (
                     f"Mujhe {count} matching "
-                    f"products aap ke yaad "
-                    f"rakhe hue size "
+                    "products aap ke yaad "
+                    "rakhe hue size "
                     f"{remembered_size} mein "
-                    f"milay hain."
+                    "milay hain."
                 )
 
             return (
                 f"I found {count} matching "
                 f"product"
                 f"{'s' if count != 1 else ''} "
-                f"in your remembered size "
+                "in your remembered size "
                 f"{remembered_size}."
             )
 
@@ -1241,7 +1442,8 @@ class CustomerInteractionAgent:
 
         return (
             f"I found {count} matching "
-            f"product{'s' if count != 1 else ''}."
+            f"product"
+            f"{'s' if count != 1 else ''}."
         )
 
     def compose_stock_response(
@@ -1249,7 +1451,9 @@ class CustomerInteractionAgent:
         language: str,
         block: StockStatusBlock,
         *,
-        requested_branch: str | None = None,
+        requested_branch: (
+            str | None
+        ) = None,
     ) -> str:
         total = sum(
             row.available_quantity
@@ -1271,7 +1475,8 @@ class CustomerInteractionAgent:
                 return (
                     f"Yes, {total} unit"
                     f"{'s are' if total != 1 else ' is'} "
-                    f"available at {requested_branch}."
+                    "available at "
+                    f"{requested_branch}."
                 )
 
             if language in {
@@ -1301,7 +1506,8 @@ class CustomerInteractionAgent:
                 )
 
             return (
-                f"There {'are' if total != 1 else 'is'} "
+                f"There "
+                f"{'are' if total != 1 else 'is'} "
                 f"{total} unit"
                 f"{'s' if total != 1 else ''} "
                 "available."
@@ -1319,6 +1525,29 @@ class CustomerInteractionAgent:
         return (
             "This item is currently "
             "out of stock."
+        )
+
+    def compose_multi_stock_response(
+        self,
+        language: str,
+        item_count: int,
+    ) -> str:
+        if language in {
+            "roman_urdu",
+            "mixed",
+        }:
+            return (
+                f"Maine {item_count} items ka "
+                "stock parallel check kiya hai. "
+                "Neeche har item ki verified "
+                "branch availability hai."
+            )
+
+        return (
+            f"I checked stock for {item_count} "
+            "items in parallel. The stock cards "
+            "below show verified branch "
+            "availability for each item."
         )
 
     def compose_stock_reference_clarification(
@@ -1414,8 +1643,8 @@ class CustomerInteractionAgent:
             )
 
         return (
-            "What price or minimum discount should "
-            "trigger the Smart Cart rule?"
+            "What price or minimum discount "
+            "should trigger the Smart Cart rule?"
         )
 
     def compose_smart_cart_authorization_clarification(
@@ -1443,7 +1672,10 @@ class CustomerInteractionAgent:
         language: str,
         authorization_mode: str,
     ) -> str:
-        if authorization_mode == "auto_buy":
+        if (
+            authorization_mode
+            == "auto_buy"
+        ):
             if language in {
                 "roman_urdu",
                 "mixed",
@@ -1483,16 +1715,23 @@ class CustomerInteractionAgent:
         language: str,
         result: dict,
     ) -> str:
-        if result.get("success") is True:
-            order_id = result.get("order_id")
+        if (
+            result.get("success")
+            is True
+        ):
+            order_id = (
+                result.get(
+                    "order_id"
+                )
+            )
 
             if language in {
                 "roman_urdu",
                 "mixed",
             }:
                 return (
-                    "Purchase successfully complete "
-                    "ho gaya. "
+                    "Purchase successfully "
+                    "complete ho gaya. "
                     f"Order ID: {order_id}"
                 )
 
@@ -1502,8 +1741,14 @@ class CustomerInteractionAgent:
             )
 
         reason = (
-            result.get("reason")
-            or "The purchase could not be completed."
+            result.get(
+                "reason"
+            )
+            or
+            (
+                "The purchase could "
+                "not be completed."
+            )
         )
 
         if language in {
@@ -1541,4 +1786,6 @@ class CustomerInteractionAgent:
         )
 
 
-customer_interaction_agent = CustomerInteractionAgent()
+customer_interaction_agent = (
+    CustomerInteractionAgent()
+)

@@ -239,6 +239,10 @@ class ExtractedEntities(BaseModel):
 
     ordinal_reference: int | None = None
 
+    ordinal_references: list[int] = Field(
+        default_factory=list
+    )
+
 
 class ParsedCustomerMessage(BaseModel):
     raw_message: str

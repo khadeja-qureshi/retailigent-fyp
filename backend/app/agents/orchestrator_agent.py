@@ -2,6 +2,10 @@ from __future__ import annotations
 
 import logging
 import re
+
+from concurrent.futures import (
+    ThreadPoolExecutor,
+)
 from dataclasses import dataclass
 from typing import Any, Callable
 
@@ -49,21 +53,13 @@ logger = logging.getLogger(
 )
 
 
-# ============================================================================
-# Internal plan model
-# ============================================================================
-
-
-@dataclass(frozen=True)
+@dataclass(
+    frozen=True
+)
 class PlannedTask:
     agent_key: str
     task_type: str
     tool_name: str
-
-
-# ============================================================================
-# Context-reference resolution
-# ============================================================================
 
 
 _CONTEXT_REFERENCE_RE = re.compile(
@@ -87,21 +83,26 @@ def resolve_variant_reference(
     state: dict,
 ) -> str | None:
     """
-    Resolve a specific variant using this priority:
+    Resolve one exact variant.
 
-    1. Explicit variant UUID
-    2. Ordinal reference against last search results
-       ("first one", "second one")
-    3. Context reference against last selected variant
-       ("it", "this one", "isko")
-
-    No product/variant is invented.
+    Priority:
+    1. explicit variant UUID
+    2. ordinal from previous search
+    3. contextual pronoun using the last variant
     """
 
     if parsed.entities.variant_id:
-        return parsed.entities.variant_id
+        return (
+            parsed
+            .entities
+            .variant_id
+        )
 
-    ordinal = parsed.entities.ordinal_reference
+    ordinal = (
+        parsed
+        .entities
+        .ordinal_reference
+    )
 
     if ordinal is not None:
         variant_ids = (
@@ -141,9 +142,91 @@ def resolve_variant_reference(
     return None
 
 
-# ============================================================================
-# Planning
-# ============================================================================
+def resolve_variant_references(
+    parsed: ParsedCustomerMessage,
+    state: dict,
+) -> list[str]:
+    """
+    Resolve one or more independent variant
+    references.
+
+    Multiple ordinals such as "first and second"
+    are used by the Orchestrator for parallel
+    specialist execution.
+    """
+
+    if parsed.entities.variant_id:
+        return [
+            parsed.entities.variant_id
+        ]
+
+    ordinals = (
+        parsed
+        .entities
+        .ordinal_references
+        or (
+            [
+                parsed
+                .entities
+                .ordinal_reference
+            ]
+            if (
+                parsed
+                .entities
+                .ordinal_reference
+                is not None
+            )
+            else []
+        )
+    )
+
+    if ordinals:
+        variant_ids = (
+            state.get(
+                "last_search_variant_ids"
+            )
+            or []
+        )
+
+        resolved: list[str] = []
+
+        for ordinal in ordinals:
+            index = ordinal - 1
+
+            if not (
+                0
+                <= index
+                < len(variant_ids)
+            ):
+                return []
+
+            variant_id = str(
+                variant_ids[index]
+            )
+
+            if (
+                variant_id
+                not in resolved
+            ):
+                resolved.append(
+                    variant_id
+                )
+
+        return resolved
+
+    single = (
+        resolve_variant_reference(
+            parsed,
+            state,
+        )
+    )
+
+    if not single:
+        return []
+
+    return [
+        single
+    ]
 
 
 def plan_intent(
@@ -151,8 +234,12 @@ def plan_intent(
 ) -> PlannedTask | None:
     if intent == "product_search":
         return PlannedTask(
-            agent_key="product_agent",
-            task_type="product_search",
+            agent_key=(
+                "product_agent"
+            ),
+            task_type=(
+                "product_search"
+            ),
             tool_name=(
                 "product_agent.search"
             ),
@@ -160,8 +247,12 @@ def plan_intent(
 
     if intent == "stock_check":
         return PlannedTask(
-            agent_key="inventory_agent",
-            task_type="stock_check",
+            agent_key=(
+                "inventory_agent"
+            ),
+            task_type=(
+                "stock_check"
+            ),
             tool_name=(
                 "inventory_agent."
                 "get_stock_snapshot_with_branches"
@@ -170,8 +261,12 @@ def plan_intent(
 
     if intent == "add_to_cart":
         return PlannedTask(
-            agent_key="orchestrator_agent",
-            task_type="add_to_cart",
+            agent_key=(
+                "orchestrator_agent"
+            ),
+            task_type=(
+                "add_to_cart"
+            ),
             tool_name=(
                 "cart_service."
                 "add_cart_item"
@@ -180,8 +275,12 @@ def plan_intent(
 
     if intent == "add_to_wishlist":
         return PlannedTask(
-            agent_key="orchestrator_agent",
-            task_type="add_to_wishlist",
+            agent_key=(
+                "orchestrator_agent"
+            ),
+            task_type=(
+                "add_to_wishlist"
+            ),
             tool_name=(
                 "wishlist_service."
                 "add_wishlist_item"
@@ -190,7 +289,9 @@ def plan_intent(
 
     if intent == "smart_cart_create":
         return PlannedTask(
-            agent_key="orchestrator_agent",
+            agent_key=(
+                "orchestrator_agent"
+            ),
             task_type=(
                 "create_smart_cart_rule"
             ),
@@ -202,8 +303,12 @@ def plan_intent(
 
     if intent == "purchase":
         return PlannedTask(
-            agent_key="purchase_agent",
-            task_type="purchase",
+            agent_key=(
+                "purchase_agent"
+            ),
+            task_type=(
+                "purchase"
+            ),
             tool_name=(
                 "purchase_agent.purchase"
             ),
@@ -212,16 +317,13 @@ def plan_intent(
     return None
 
 
-# ============================================================================
-# Result validation / typed block conversion
-# ============================================================================
-
-
 def _primary_image_url(
     result: dict,
 ) -> str | None:
     images = (
-        result.get("images")
+        result.get(
+            "images"
+        )
         or []
     )
 
@@ -245,8 +347,10 @@ def _primary_image_url(
     if not primary:
         return None
 
-    return primary.get(
-        "image_url"
+    return (
+        primary.get(
+            "image_url"
+        )
     )
 
 
@@ -254,7 +358,9 @@ def _max_available(
     result: dict,
 ) -> int:
     inventory = (
-        result.get("inventory")
+        result.get(
+            "inventory"
+        )
         or []
     )
 
@@ -276,11 +382,8 @@ def build_product_carousel(
     results: list[dict],
 ) -> ProductCarouselBlock:
     """
-    Validate specialist output before exposing
-    it to chat.
-
-    Malformed search rows are skipped rather
-    than converted into hallucinated values.
+    Validate Product Agent rows before exposing
+    them as chat blocks.
     """
 
     products: list[
@@ -289,27 +392,37 @@ def build_product_carousel(
 
     for result in results:
         product = (
-            result.get("product")
+            result.get(
+                "product"
+            )
             or {}
         )
 
         variant = (
-            result.get("variant")
+            result.get(
+                "variant"
+            )
             or {}
         )
 
         pricing = (
-            result.get("pricing")
+            result.get(
+                "pricing"
+            )
             or {}
         )
 
         color = (
-            variant.get("color")
+            variant.get(
+                "color"
+            )
             or {}
         )
 
         size = (
-            variant.get("size")
+            variant.get(
+                "size"
+            )
             or {}
         )
 
@@ -326,11 +439,15 @@ def build_product_carousel(
         )
 
         name = (
-            product.get("name")
+            product.get(
+                "name"
+            )
         )
 
         sku = (
-            variant.get("sku")
+            variant.get(
+                "sku"
+            )
         )
 
         if not all(
@@ -394,8 +511,10 @@ def build_product_carousel(
                     float(
                         effective_price
                     )
-                    if effective_price
-                    is not None
+                    if (
+                        effective_price
+                        is not None
+                    )
                     else None
                 ),
                 image_url=(
@@ -421,7 +540,9 @@ def build_stock_status_block(
     variant_id: str,
     inventory: list[dict],
     *,
-    branch_name: str | None = None,
+    branch_name: (
+        str | None
+    ) = None,
 ) -> StockStatusBlock:
     branches: list[
         StockBranchItem
@@ -429,7 +550,9 @@ def build_stock_status_block(
 
     for row in inventory:
         branch = (
-            row.get("branch")
+            row.get(
+                "branch"
+            )
             or {}
         )
 
@@ -437,25 +560,31 @@ def build_stock_status_block(
             continue
 
         actual_branch_name = (
-            branch.get("name")
+            branch.get(
+                "name"
+            )
         )
 
         if (
             branch_name
-            and str(
+            and
+            str(
                 actual_branch_name
                 or ""
             )
             .strip()
             .lower()
-            != branch_name
+            !=
+            branch_name
             .strip()
             .lower()
         ):
             continue
 
         status = (
-            row.get("status")
+            row.get(
+                "status"
+            )
         )
 
         if status not in {
@@ -501,14 +630,13 @@ def build_stock_status_block(
         )
 
     return StockStatusBlock(
-        variant_id=variant_id,
-        branches=branches,
+        variant_id=(
+            variant_id
+        ),
+        branches=(
+            branches
+        ),
     )
-
-
-# ============================================================================
-# Orchestrator
-# ============================================================================
 
 
 class OrchestratorAgent:
@@ -597,8 +725,8 @@ class OrchestratorAgent:
                     tool_call[
                         "id"
                     ],
-                    error_message=str(
-                        exc
+                    error_message=(
+                        str(exc)
                     ),
                 )
             )
@@ -607,13 +735,91 @@ class OrchestratorAgent:
                 chat_service
                 .fail_agent_task(
                     task["id"],
-                    error_message=str(
-                        exc
+                    error_message=(
+                        str(exc)
                     ),
                 )
             )
 
             raise
+
+    def _run_parallel_traced_tools(
+        self,
+        *,
+        run_id: str,
+        jobs: list[
+            tuple[
+                PlannedTask,
+                dict,
+                Callable[
+                    [],
+                    Any,
+                ],
+            ]
+        ],
+    ) -> list[Any]:
+        """
+        Run independent specialist/tool calls
+        concurrently while keeping individual
+        task/tool traces.
+        """
+
+        if not jobs:
+            return []
+
+        if len(jobs) == 1:
+            (
+                plan,
+                arguments,
+                call,
+            ) = jobs[0]
+
+            return [
+                self._run_traced_tool(
+                    run_id=run_id,
+                    plan=plan,
+                    arguments=(
+                        arguments
+                    ),
+                    call=call,
+                )
+            ]
+
+        worker_count = min(
+            len(jobs),
+            8,
+        )
+
+        with ThreadPoolExecutor(
+            max_workers=(
+                worker_count
+            ),
+            thread_name_prefix=(
+                "retailigent-orchestrator"
+            ),
+        ) as executor:
+            futures = [
+                executor.submit(
+                    self._run_traced_tool,
+                    run_id=run_id,
+                    plan=plan,
+                    arguments=(
+                        arguments
+                    ),
+                    call=call,
+                )
+                for (
+                    plan,
+                    arguments,
+                    call,
+                ) in jobs
+            ]
+
+            return [
+                future.result()
+                for future
+                in futures
+            ]
 
     def _finish_clarification(
         self,
@@ -745,16 +951,10 @@ class OrchestratorAgent:
             )
         )
 
-        # Phase 12:
-        # Load durable customer context once
-        # at the start of the conversation.
-        #
-        # The second condition also initializes
-        # conversations that existed before
-        # Phase 12 was introduced.
         if (
             is_new_conversation
-            or not context_already_loaded
+            or
+            not context_already_loaded
         ):
             try:
                 customer_context = (
@@ -779,10 +979,6 @@ class OrchestratorAgent:
                 )
 
             except Exception:
-                # Memory should enrich the
-                # shopping experience, but it
-                # must never prevent core retail
-                # actions from working.
                 logger.exception(
                     "Could not load customer "
                     "memory context for "
@@ -837,13 +1033,16 @@ class OrchestratorAgent:
             user_message["id"]
         )
 
-        chat_service.merge_conversation_state(
-            customer_id,
-            conversation_id,
-            {
-                "memory_finalized":
-                    False,
-            },
+        (
+            chat_service
+            .merge_conversation_state(
+                customer_id,
+                conversation_id,
+                {
+                    "memory_finalized":
+                        False,
+                },
+            )
         )
 
         run = (
@@ -893,16 +1092,13 @@ class OrchestratorAgent:
                         "id"
                     ],
                     output_payload=(
-                        parsed
-                        .model_dump(
+                        parsed.model_dump(
                             mode="json"
                         )
                     ),
                 )
             )
 
-            # Refresh state in case memory context or
-            # any other pre-processing state changed.
             state = (
                 chat_service
                 .get_conversation_state(
@@ -937,25 +1133,19 @@ class OrchestratorAgent:
                         run_id=(
                             run_id
                         ),
-                        parsed=(
-                            parsed
-                        ),
-                        content=(
-                            content
-                        ),
+                        parsed=parsed,
+                        content=content,
                     )
                 )
-
-            # ================================================================
-            # Product search
-            # ================================================================
 
             if (
                 parsed.intent
                 == "product_search"
             ):
-                plan = plan_intent(
-                    parsed.intent
+                plan = (
+                    plan_intent(
+                        parsed.intent
+                    )
                 )
 
                 assert (
@@ -987,9 +1177,7 @@ class OrchestratorAgent:
                         run_id=(
                             run_id
                         ),
-                        plan=(
-                            plan
-                        ),
+                        plan=plan,
                         arguments=(
                             arguments
                         ),
@@ -1026,9 +1214,7 @@ class OrchestratorAgent:
                 if variant_ids:
                     updates[
                         "last_variant_id"
-                    ] = (
-                        variant_ids[0]
-                    )
+                    ] = variant_ids[0]
 
                 (
                     chat_service
@@ -1060,22 +1246,18 @@ class OrchestratorAgent:
                     block
                 ]
 
-            # ================================================================
-            # Stock check
-            # ================================================================
-
             elif (
                 parsed.intent
                 == "stock_check"
             ):
-                variant_id = (
-                    resolve_variant_reference(
+                variant_ids = (
+                    resolve_variant_references(
                         parsed,
                         state,
                     )
                 )
 
-                if not variant_id:
+                if not variant_ids:
                     return (
                         self
                         ._finish_clarification(
@@ -1088,9 +1270,7 @@ class OrchestratorAgent:
                             run_id=(
                                 run_id
                             ),
-                            parsed=(
-                                parsed
-                            ),
+                            parsed=parsed,
                             content=(
                                 customer_interaction_agent
                                 .compose_stock_reference_clarification(
@@ -1100,41 +1280,58 @@ class OrchestratorAgent:
                         )
                     )
 
-                plan = plan_intent(
-                    parsed.intent
+                plan = (
+                    plan_intent(
+                        parsed.intent
+                    )
                 )
 
                 assert (
                     plan is not None
                 )
 
-                arguments = {
-                    "variant_id":
-                        variant_id,
-                }
+                jobs: list[
+                    tuple[
+                        PlannedTask,
+                        dict,
+                        Callable[
+                            [],
+                            Any,
+                        ],
+                    ]
+                ] = []
 
-                inventory = (
+                for variant_id in variant_ids:
+                    arguments = {
+                        "variant_id":
+                            variant_id,
+                    }
+
+                    jobs.append(
+                        (
+                            plan,
+                            arguments,
+                            (
+                                lambda current_variant_id=variant_id:
+                                    inventory_agent
+                                    .get_stock_snapshot_with_branches(
+                                        current_variant_id
+                                    )
+                            ),
+                        )
+                    )
+
+                inventory_results = (
                     self
-                    ._run_traced_tool(
+                    ._run_parallel_traced_tools(
                         run_id=(
                             run_id
                         ),
-                        plan=(
-                            plan
-                        ),
-                        arguments=(
-                            arguments
-                        ),
-                        call=lambda: (
-                            inventory_agent
-                            .get_stock_snapshot_with_branches(
-                                variant_id
-                            )
-                        ),
+                        jobs=jobs,
                     )
                 )
 
-                block = (
+                stock_blocks = [
                     build_stock_status_block(
                         variant_id,
                         inventory,
@@ -1144,7 +1341,15 @@ class OrchestratorAgent:
                             .branch_name
                         ),
                     )
-                )
+                    for (
+                        variant_id,
+                        inventory,
+                    ) in zip(
+                        variant_ids,
+                        inventory_results,
+                        strict=True,
+                    )
+                ]
 
                 (
                     chat_service
@@ -1155,33 +1360,43 @@ class OrchestratorAgent:
                             "last_intent":
                                 parsed.intent,
                             "last_variant_id":
-                                variant_id,
+                                variant_ids[-1],
                             "language":
                                 parsed.language,
                         },
                     )
                 )
 
-                content = (
-                    customer_interaction_agent
-                    .compose_stock_response(
-                        parsed.language,
-                        block,
-                        requested_branch=(
-                            parsed
-                            .entities
-                            .branch_name
-                        ),
+                if (
+                    len(stock_blocks)
+                    == 1
+                ):
+                    content = (
+                        customer_interaction_agent
+                        .compose_stock_response(
+                            parsed.language,
+                            stock_blocks[0],
+                            requested_branch=(
+                                parsed
+                                .entities
+                                .branch_name
+                            ),
+                        )
                     )
+                else:
+                    content = (
+                        customer_interaction_agent
+                        .compose_multi_stock_response(
+                            parsed.language,
+                            len(
+                                stock_blocks
+                            ),
+                        )
+                    )
+
+                blocks = list(
+                    stock_blocks
                 )
-
-                blocks = [
-                    block
-                ]
-
-            # ================================================================
-            # Add to cart
-            # ================================================================
 
             elif (
                 parsed.intent
@@ -1207,9 +1422,7 @@ class OrchestratorAgent:
                             run_id=(
                                 run_id
                             ),
-                            parsed=(
-                                parsed
-                            ),
+                            parsed=parsed,
                             content=(
                                 customer_interaction_agent
                                 .compose_item_reference_clarification(
@@ -1226,8 +1439,10 @@ class OrchestratorAgent:
                     or 1
                 )
 
-                plan = plan_intent(
-                    parsed.intent
+                plan = (
+                    plan_intent(
+                        parsed.intent
+                    )
                 )
 
                 assert (
@@ -1247,9 +1462,7 @@ class OrchestratorAgent:
                         run_id=(
                             run_id
                         ),
-                        plan=(
-                            plan
-                        ),
+                        plan=plan,
                         arguments=(
                             arguments
                         ),
@@ -1303,10 +1516,6 @@ class OrchestratorAgent:
                     block
                 ]
 
-            # ================================================================
-            # Add to wishlist
-            # ================================================================
-
             elif (
                 parsed.intent
                 == "add_to_wishlist"
@@ -1331,9 +1540,7 @@ class OrchestratorAgent:
                             run_id=(
                                 run_id
                             ),
-                            parsed=(
-                                parsed
-                            ),
+                            parsed=parsed,
                             content=(
                                 customer_interaction_agent
                                 .compose_item_reference_clarification(
@@ -1343,8 +1550,10 @@ class OrchestratorAgent:
                         )
                     )
 
-                plan = plan_intent(
-                    parsed.intent
+                plan = (
+                    plan_intent(
+                        parsed.intent
+                    )
                 )
 
                 assert (
@@ -1362,9 +1571,7 @@ class OrchestratorAgent:
                         run_id=(
                             run_id
                         ),
-                        plan=(
-                            plan
-                        ),
+                        plan=plan,
                         arguments=(
                             arguments
                         ),
@@ -1414,10 +1621,6 @@ class OrchestratorAgent:
                     block
                 ]
 
-            # ================================================================
-            # Smart Cart creation
-            # ================================================================
-
             elif (
                 parsed.intent
                 == "smart_cart_create"
@@ -1442,9 +1645,7 @@ class OrchestratorAgent:
                             run_id=(
                                 run_id
                             ),
-                            parsed=(
-                                parsed
-                            ),
+                            parsed=parsed,
                             content=(
                                 customer_interaction_agent
                                 .compose_item_reference_clarification(
@@ -1477,9 +1678,7 @@ class OrchestratorAgent:
                             run_id=(
                                 run_id
                             ),
-                            parsed=(
-                                parsed
-                            ),
+                            parsed=parsed,
                             content=(
                                 customer_interaction_agent
                                 .compose_smart_cart_trigger_clarification(
@@ -1511,9 +1710,7 @@ class OrchestratorAgent:
                             run_id=(
                                 run_id
                             ),
-                            parsed=(
-                                parsed
-                            ),
+                            parsed=parsed,
                             content=(
                                 customer_interaction_agent
                                 .compose_smart_cart_authorization_clarification(
@@ -1530,8 +1727,10 @@ class OrchestratorAgent:
                     or 1
                 )
 
-                plan = plan_intent(
-                    parsed.intent
+                plan = (
+                    plan_intent(
+                        parsed.intent
+                    )
                 )
 
                 assert (
@@ -1543,16 +1742,14 @@ class OrchestratorAgent:
                         variant_id,
                     "quantity":
                         quantity,
-                    "target_price": (
+                    "target_price":
                         parsed
                         .entities
-                        .target_price
-                    ),
-                    "min_discount_percentage": (
+                        .target_price,
+                    "min_discount_percentage":
                         parsed
                         .entities
-                        .min_discount_percentage
-                    ),
+                        .min_discount_percentage,
                     "authorization_mode":
                         authorization_mode,
                     "branch_id":
@@ -1565,9 +1762,7 @@ class OrchestratorAgent:
                         run_id=(
                             run_id
                         ),
-                        plan=(
-                            plan
-                        ),
+                        plan=plan,
                         arguments=(
                             arguments
                         ),
@@ -1620,9 +1815,7 @@ class OrchestratorAgent:
                             "last_variant_id":
                                 variant_id,
                             "last_smart_cart_rule_id":
-                                rule[
-                                    "id"
-                                ],
+                                rule["id"],
                             "language":
                                 parsed.language,
                         },
@@ -1640,10 +1833,6 @@ class OrchestratorAgent:
                 blocks = [
                     block
                 ]
-
-            # ================================================================
-            # Purchase
-            # ================================================================
 
             elif (
                 parsed.intent
@@ -1669,9 +1858,7 @@ class OrchestratorAgent:
                             run_id=(
                                 run_id
                             ),
-                            parsed=(
-                                parsed
-                            ),
+                            parsed=parsed,
                             content=(
                                 customer_interaction_agent
                                 .compose_item_reference_clarification(
@@ -1712,8 +1899,10 @@ class OrchestratorAgent:
                     f"{user_message_id}"
                 )
 
-                plan = plan_intent(
-                    parsed.intent
+                plan = (
+                    plan_intent(
+                        parsed.intent
+                    )
                 )
 
                 assert (
@@ -1741,9 +1930,7 @@ class OrchestratorAgent:
                         run_id=(
                             run_id
                         ),
-                        plan=(
-                            plan
-                        ),
+                        plan=plan,
                         arguments=(
                             arguments
                         ),
@@ -1789,9 +1976,9 @@ class OrchestratorAgent:
 
                     if not order_id:
                         raise ValueError(
-                            "Purchase service "
-                            "returned success=True "
-                            "without an order_id."
+                            "Purchase service returned "
+                            "success=True without an "
+                            "order_id."
                         )
 
                     order_payload = {
@@ -1827,10 +2014,8 @@ class OrchestratorAgent:
                             parsed.language,
                     }
 
-                    if (
-                        result.get(
-                            "purchase_attempt_id"
-                        )
+                    if result.get(
+                        "purchase_attempt_id"
                     ):
                         state_updates[
                             "last_purchase_attempt_id"
@@ -1873,10 +2058,6 @@ class OrchestratorAgent:
                     )
                 )
 
-            # ================================================================
-            # Unsupported/recognized-but-unwired intent
-            # ================================================================
-
             else:
                 content = (
                     customer_interaction_agent
@@ -1900,10 +2081,6 @@ class OrchestratorAgent:
                         },
                     )
                 )
-
-            # ================================================================
-            # Final customer-facing response persistence
-            # ================================================================
 
             assistant_message = (
                 chat_service
@@ -1979,8 +2156,8 @@ class OrchestratorAgent:
                     chat_service
                     .fail_agent_run(
                         run_id,
-                        error_message=str(
-                            exc
+                        error_message=(
+                            str(exc)
                         ),
                     )
                 )
@@ -1988,4 +2165,6 @@ class OrchestratorAgent:
                 raise
 
 
-orchestrator_agent = OrchestratorAgent()
+orchestrator_agent = (
+    OrchestratorAgent()
+)
