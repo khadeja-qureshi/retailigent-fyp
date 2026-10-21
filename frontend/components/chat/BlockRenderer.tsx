@@ -8,6 +8,8 @@ import AlertBlock from "@/components/chat-blocks/AlertBlock";
 import CartSummaryBlock from "@/components/chat-blocks/CartSummaryBlock";
 import NotificationListBlock from "@/components/chat-blocks/NotificationListBlock";
 import ProductCarouselBlock from "@/components/chat-blocks/ProductCarouselBlock";
+import RecommendationBlock from "@/components/chat-blocks/RecommendationBlock";
+import BranchMapBlock from "@/components/chat-blocks/BranchMapBlock";
 import ReservationBlock from "@/components/chat-blocks/ReservationBlock";
 import SmartCartRuleBlock from "@/components/chat-blocks/SmartCartRuleBlock";
 import StockStatusBlock from "@/components/chat-blocks/StockStatusBlock";
@@ -824,6 +826,16 @@ export default function BlockRenderer({
         <ProductCarouselBlock
           block={block}
         />
+      );
+
+    case "recommendation":
+      return (
+        <RecommendationBlock block={block} />
+      );
+
+    case "branch_map":
+      return (
+        <BranchMapBlock block={block} />
       );
 
     case "stock_status":

@@ -21,15 +21,23 @@ from app.agents.memory_agent import (
 from app.agents.product_agent import (
     product_agent,
 )
+from app.agents.recommendation_agent import (
+    recommendation_agent,
+)
+from app.agents.location_agent import (
+    location_agent,
+)
 from app.agents.purchase_agent import (
     purchase_agent,
 )
 from app.schemas.chat import (
     CartSummaryBlock,
+    BranchMapBlock,
     ChatTurnResponse,
     OrderConfirmationBlock,
     ParsedCustomerMessage,
     ProductCard,
+    RecommendationBlock,
     ProductCarouselBlock,
     SmartCartRuleBlock,
     StockBranchItem,
@@ -243,6 +251,20 @@ def plan_intent(
             tool_name=(
                 "product_agent.search"
             ),
+        )
+
+    if intent == "store_location_search":
+        return PlannedTask(
+            agent_key="location_agent",
+            task_type="branch_location_search",
+            tool_name="location_agent.search",
+        )
+
+    if intent == "recommendation_search":
+        return PlannedTask(
+            agent_key="recommendation_agent",
+            task_type="personalized_recommendations",
+            tool_name="recommendation_agent.recommend",
         )
 
     if intent == "stock_check":
@@ -1139,6 +1161,114 @@ class OrchestratorAgent:
                 )
 
             if (
+                parsed.intent
+                == "store_location_search"
+            ):
+                plan = plan_intent(parsed.intent)
+                assert plan is not None
+
+                arguments = {
+                    "branch_name": parsed.entities.branch_name,
+                }
+
+                results = self._run_traced_tool(
+                    run_id=run_id,
+                    plan=plan,
+                    arguments=arguments,
+                    call=lambda: location_agent.search(**arguments),
+                )
+
+                block = BranchMapBlock(
+                    title="Store locations and hours",
+                    branches=results,
+                )
+
+                (
+                    chat_service
+                    .merge_conversation_state(
+                        customer_id,
+                        conversation_id,
+                        {
+                            "last_intent": parsed.intent,
+                            "language": parsed.language,
+                        },
+                    )
+                )
+
+                if results:
+                    content = (
+                        "Here are the matching store locations, "
+                        "addresses, and opening hours."
+                    )
+                else:
+                    content = (
+                        "I couldn't find an active store matching "
+                        "that location. Try specifying a branch or area."
+                    )
+
+                blocks = [block]
+
+            elif (
+                parsed.intent
+                == "recommendation_search"
+            ):
+                plan = plan_intent(parsed.intent)
+                assert plan is not None
+
+                arguments = {
+                    "customer_id": customer_id,
+                    "query": parsed.raw_message,
+                    "category": parsed.entities.category,
+                    "color": parsed.entities.color,
+                    "size": parsed.entities.size,
+                    "material": parsed.entities.material,
+                    "min_price": parsed.entities.min_price,
+                    "max_price": parsed.entities.max_price,
+                    "match_count": 10,
+                }
+
+                results = self._run_traced_tool(
+                    run_id=run_id,
+                    plan=plan,
+                    arguments=arguments,
+                    call=lambda: recommendation_agent.recommend(
+                        **arguments
+                    ),
+                )
+
+                product_block = build_product_carousel(results)
+                block = RecommendationBlock(
+                    title="Recommended for you",
+                    products=product_block.products,
+                )
+
+                variant_ids = [
+                    product.variant_id
+                    for product in block.products
+                ]
+
+                updates = {
+                    "last_intent": parsed.intent,
+                    "language": parsed.language,
+                    "last_search_variant_ids": variant_ids,
+                }
+
+                if variant_ids:
+                    updates["last_variant_id"] = variant_ids[0]
+
+                chat_service.merge_conversation_state(
+                    customer_id,
+                    conversation_id,
+                    updates,
+                )
+
+                content = (
+                    "Here are some product recommendations "
+                    "that match your request."
+                )
+                blocks = [block]
+
+            elif (
                 parsed.intent
                 == "product_search"
             ):

@@ -72,7 +72,7 @@ def get_inventory_snapshot_enriched(
             supabase_admin
             .table("branches")
             .select(
-                "id, name, city, area, address"
+                "id, name, city, area, address, latitude, longitude, phone, opening_time, closing_time"
             )
             .in_(
                 "id",

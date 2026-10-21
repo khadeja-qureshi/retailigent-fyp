@@ -51,6 +51,34 @@ export interface ProductCarouselBlock {
 }
 
 
+export interface RecommendationChatBlock {
+  type: "recommendation";
+  title: string;
+  products: ProductCardData[];
+}
+
+
+export interface BranchLocationData {
+  branch_id: string;
+  name: string;
+  city: string;
+  area?: string | null;
+  address?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  phone?: string | null;
+  opening_time?: string | null;
+  closing_time?: string | null;
+}
+
+
+export interface BranchMapChatBlock {
+  type: "branch_map";
+  title: string;
+  branches: BranchLocationData[];
+}
+
+
 export interface StockBranchItem {
   branch_id: string;
 
@@ -187,6 +215,8 @@ export interface NotificationListChatBlock {
 
 export type RenderableBlock =
   | ProductCarouselBlock
+  | RecommendationChatBlock
+  | BranchMapChatBlock
   | StockStatusBlock
   | CartSummaryChatBlock
   | WishlistChatBlock

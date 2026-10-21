@@ -16,6 +16,8 @@ from app.agents.orchestrator_agent import (
     resolve_variant_references,
 )
 from app.schemas.chat import (
+    BranchMapBlock,
+    RecommendationBlock,
     CartSummaryBlock,
     OrderConfirmationBlock,
     ProductCarouselBlock,
@@ -1591,3 +1593,67 @@ def test_purchase_without_item_reference_does_not_execute(
         response.blocks
         == []
     )
+
+
+def test_orchestrator_store_location_returns_branch_map(
+    monkeypatch,
+    fake_persistence,
+):
+    def fake_location_search(**kwargs):
+        return [
+            {
+                "branch_id": "branch-1",
+                "name": "Gulberg Branch",
+                "city": "Lahore",
+                "area": "Gulberg",
+                "address": "Main Boulevard, Gulberg",
+                "latitude": 31.5204,
+                "longitude": 74.3587,
+                "phone": None,
+                "opening_time": "10:00",
+                "closing_time": "22:00",
+            }
+        ]
+
+    monkeypatch.setattr(
+        orchestrator_module.location_agent,
+        "search",
+        fake_location_search,
+    )
+
+    response = orchestrator_agent.process_turn(
+        customer_id="customer-1",
+        message="Where is the Gulberg branch?",
+    )
+
+    assert len(response.blocks) == 1
+    assert isinstance(response.blocks[0], BranchMapBlock)
+    assert response.blocks[0].branches[0].name == "Gulberg Branch"
+
+
+def test_orchestrator_recommendation_returns_recommendation_block(
+    monkeypatch,
+    fake_persistence,
+):
+    monkeypatch.setattr(
+        orchestrator_module.memory_agent,
+        "load_context",
+        lambda customer_id: {},
+    )
+
+    def fake_recommend(**kwargs):
+        return []
+
+    monkeypatch.setattr(
+        orchestrator_module.recommendation_agent,
+        "recommend",
+        fake_recommend,
+    )
+
+    response = orchestrator_agent.process_turn(
+        customer_id="customer-1",
+        message="Recommend something for me",
+    )
+
+    assert len(response.blocks) == 1
+    assert isinstance(response.blocks[0], RecommendationBlock)

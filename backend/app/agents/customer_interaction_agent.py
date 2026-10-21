@@ -1053,6 +1053,56 @@ def classify_intent(
     if _contains_any(
         text,
         {
+            "store location",
+            "store locations",
+            "branch location",
+            "branch locations",
+            "nearest branch",
+            "nearest store",
+            "nearby branch",
+            "nearby store",
+            "store hours",
+            "branch hours",
+            "opening hours",
+            "opening time",
+            "closing time",
+            "store address",
+            "branch address",
+            "where is your store",
+            "where is the store",
+            "where is your branch",
+            "gulberg branch",
+            "clifton branch",
+            "dha branch",
+        },
+    ):
+        return "store_location_search"
+
+    if _contains_any(
+        text,
+        {
+            "recommend",
+            "recommendation",
+            "recommendations",
+            "suggest",
+            "suggestion",
+            "suggestions",
+            "recommend for me",
+            "what would suit me",
+            "what should i buy",
+            "mere liye suggest",
+            "mere liye recommend",
+            "suggest karo",
+            "recommend karo",
+            "kya loon",
+            "kya lu",
+        },
+    ):
+        return "recommendation_search"
+
+    if _contains_any(
+        text,
+        {
             "show",
             "find",
             "search",

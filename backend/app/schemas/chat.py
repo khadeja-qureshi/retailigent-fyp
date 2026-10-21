@@ -49,6 +49,25 @@ class ProductCarouselBlock(BaseModel):
 # ---------------------------------------------------------------------------
 
 
+class BranchLocationItem(BaseModel):
+    branch_id: str
+    name: str
+    city: str
+    area: str | None = None
+    address: str | None = None
+    latitude: float | None = None
+    longitude: float | None = None
+    phone: str | None = None
+    opening_time: str | None = None
+    closing_time: str | None = None
+
+
+class BranchMapBlock(BaseModel):
+    type: Literal["branch_map"] = "branch_map"
+    title: str = "Store locations"
+    branches: list[BranchLocationItem] = Field(default_factory=list)
+
+
 class StockBranchItem(BaseModel):
     branch_id: str
     branch_name: str
@@ -64,6 +83,16 @@ class StockBranchItem(BaseModel):
         "low_stock",
         "available",
     ]
+
+
+class RecommendationBlock(BaseModel):
+    type: Literal["recommendation"] = "recommendation"
+
+    title: str = "Recommended for you"
+
+    products: list[ProductCard] = Field(
+        default_factory=list
+    )
 
 
 class StockStatusBlock(BaseModel):
@@ -154,6 +183,8 @@ class NotificationListBlock(BaseModel):
 RenderableBlock = Annotated[
     (
         ProductCarouselBlock
+        | RecommendationBlock
+        | BranchMapBlock
         | StockStatusBlock
         | CartSummaryBlock
         | WishlistBlock
