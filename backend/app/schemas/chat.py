@@ -173,6 +173,25 @@ class NotificationListBlock(BaseModel):
     data: dict[str, Any]
 
 
+
+class SupportEscalationBlock(BaseModel):
+    type: Literal[
+        "support_escalation"
+    ] = "support_escalation"
+
+    ticket_id: str
+    status: Literal[
+        "open",
+        "in_progress",
+        "waiting_customer",
+        "escalated",
+        "resolved",
+        "closed",
+    ] = "open"
+    subject: str
+    message: str
+
+
 # ---------------------------------------------------------------------------
 # Discriminated union
 #
@@ -193,6 +212,7 @@ RenderableBlock = Annotated[
         | AlertBlock
         | OrderConfirmationBlock
         | NotificationListBlock
+        | SupportEscalationBlock
     ),
     Field(
         discriminator="type"

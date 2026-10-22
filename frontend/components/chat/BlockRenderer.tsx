@@ -13,6 +13,7 @@ import BranchMapBlock from "@/components/chat-blocks/BranchMapBlock";
 import ReservationBlock from "@/components/chat-blocks/ReservationBlock";
 import SmartCartRuleBlock from "@/components/chat-blocks/SmartCartRuleBlock";
 import StockStatusBlock from "@/components/chat-blocks/StockStatusBlock";
+import SupportEscalationBlock from "@/components/chat-blocks/SupportEscalationBlock";
 import WishlistBlock from "@/components/chat-blocks/WishlistBlock";
 
 import {
@@ -887,6 +888,12 @@ export default function BlockRenderer({
         />
       );
 
+    case "support_escalation":
+      return (
+        <SupportEscalationBlock
+          block={block}
+        />
+      );
     case "order_confirmation":
       return (
         <ChatOrderConfirmation

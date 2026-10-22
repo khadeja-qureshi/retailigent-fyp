@@ -1,4 +1,4 @@
-from app.agents.customer_interaction_agent import (
+﻿from app.agents.customer_interaction_agent import (
     customer_interaction_agent,
     detect_language,
 )
@@ -281,7 +281,7 @@ def test_put_context_item_in_wishlist():
     assert (
         parsed.requires_clarification
         is False
-    )    
+    )
 
 def test_discount_notify_becomes_smart_cart():
     parsed = (
@@ -318,4 +318,39 @@ def test_discount_notify_becomes_smart_cart():
     assert (
         parsed.requires_clarification
         is False
-    )    
+    )
+
+
+def test_support_intent_detects_english_complaint():
+    parsed = customer_interaction_agent.parse(
+        "My order is delayed and I want to complain"
+    )
+    assert parsed.intent == "support_request"
+
+
+def test_support_intent_detects_human_agent_request():
+    parsed = customer_interaction_agent.parse(
+        "Please connect me to a human agent"
+    )
+    assert parsed.intent == "support_request"
+
+
+def test_support_intent_detects_roman_urdu():
+    parsed = customer_interaction_agent.parse(
+        "Mujhe shikayat karni hai, support chahiye"
+    )
+    assert parsed.intent == "support_request"
+
+
+def test_support_intent_detects_mixed_language():
+    parsed = customer_interaction_agent.parse(
+        "My order late hai, please help"
+    )
+    assert parsed.intent == "support_request"
+
+
+def test_product_search_still_works():
+    parsed = customer_interaction_agent.parse(
+        "Show me blue kurtas size M"
+    )
+    assert parsed.intent == "product_search"

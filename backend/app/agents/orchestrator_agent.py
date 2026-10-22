@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import logging
 import re
@@ -27,6 +27,9 @@ from app.agents.recommendation_agent import (
 from app.agents.location_agent import (
     location_agent,
 )
+from app.agents.support_agent import (
+    support_agent,
+)
 from app.agents.purchase_agent import (
     purchase_agent,
 )
@@ -34,6 +37,7 @@ from app.schemas.chat import (
     CartSummaryBlock,
     BranchMapBlock,
     ChatTurnResponse,
+    SupportEscalationBlock,
     OrderConfirmationBlock,
     ParsedCustomerMessage,
     ProductCard,
@@ -53,6 +57,10 @@ from app.services.smart_cart_service import (
 )
 from app.services.wishlist_service import (
     add_wishlist_item,
+)
+from app.services.support_service import (
+    SupportTicketError,
+    create_support_ticket,
 )
 
 
@@ -2186,6 +2194,113 @@ class OrchestratorAgent:
                         parsed.language,
                         result,
                     )
+                )
+
+            elif parsed.intent == "support_request":
+                recent_messages = []
+
+                try:
+                    recent_messages = (
+                        chat_service.list_recent_messages(
+                            customer_id,
+                            conversation_id,
+                            limit=12,
+                        )
+                    )
+                except Exception:
+                    logger.exception(
+                        "Could not load recent messages for "
+                        "support handoff in conversation %s",
+                        conversation_id,
+                    )
+
+                # The current message is passed separately.
+                recent_messages = [
+                    item
+                    for item in recent_messages
+                    if not (
+                        str(item.get("role", "")).casefold()
+                        in {"user", "customer"}
+                        and str(item.get("content", "")).strip()
+                        == message.strip()
+                    )
+                ]
+
+                escalation = support_agent.prepare_escalation(
+                    message=message,
+                    language=parsed.language,
+                    customer_context=customer_context,
+                    recent_messages=recent_messages,
+                )
+
+                subject = escalation["subject"]
+
+                try:
+                    ticket = create_support_ticket(
+                        customer_id=customer_id,
+                        conversation_id=conversation_id,
+                        subject=subject,
+                        description=escalation["description"],
+                        sentiment=escalation["sentiment"],
+                        priority=escalation["priority"],
+                        handoff_summary=escalation["handoff_summary"],
+                        agent_context=escalation["agent_context"],
+                    )
+
+                    ticket_id = str(ticket["ticket_id"])
+                    ticket_status = ticket.get("status", "open")
+                    ticket_subject = ticket.get("subject", subject)
+
+                    if parsed.language == "roman_urdu":
+                        content = (
+                            "Aapki support request team ko bhej di gayi hai. "
+                            f"Ticket ID: {ticket_id}"
+                        )
+                    else:
+                        content = (
+                            escalation["response"]
+                            + f" Ticket ID: {ticket_id}."
+                        )
+
+                    blocks = [
+                        SupportEscalationBlock(
+                            ticket_id=ticket_id,
+                            status=ticket_status,
+                            subject=ticket_subject,
+                            message=content,
+                        )
+                    ]
+
+                    state_updates = {
+                        "last_intent": parsed.intent,
+                        "last_support_ticket_id": ticket_id,
+                        "language": parsed.language,
+                    }
+
+                except SupportTicketError:
+                    if parsed.language == "roman_urdu":
+                        content = (
+                            "Maazrat, aapki support request "
+                            "abhi create nahi ho saki. "
+                            "Please dobara try karein."
+                        )
+                    else:
+                        content = (
+                            "Sorry, I couldn't create your "
+                            "support request right now. "
+                            "Please try again."
+                        )
+
+                    blocks = []
+                    state_updates = {
+                        "last_intent": parsed.intent,
+                        "language": parsed.language,
+                    }
+
+                chat_service.merge_conversation_state(
+                    customer_id,
+                    conversation_id,
+                    state_updates,
                 )
 
             else:

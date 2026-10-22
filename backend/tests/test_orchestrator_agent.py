@@ -23,6 +23,7 @@ from app.schemas.chat import (
     ProductCarouselBlock,
     SmartCartRuleBlock,
     StockStatusBlock,
+    SupportEscalationBlock,
     WishlistBlock,
 )
 
@@ -1657,3 +1658,137 @@ def test_orchestrator_recommendation_returns_recommendation_block(
 
     assert len(response.blocks) == 1
     assert isinstance(response.blocks[0], RecommendationBlock)
+
+
+def test_support_request_returns_ticket_block(
+    monkeypatch,
+    fake_persistence,
+):
+    monkeypatch.setattr(
+        orchestrator_module.memory_agent,
+        "load_context",
+        lambda customer_id: {},
+    )
+
+    calls = {}
+
+    def fake_create_ticket(**kwargs):
+        calls.update(kwargs)
+        return {
+            "ticket_id": "ticket-123",
+            "status": "open",
+            "subject": "Delayed order",
+        }
+
+    monkeypatch.setattr(
+        orchestrator_module,
+        "create_support_ticket",
+        fake_create_ticket,
+    )
+
+    response = orchestrator_agent.process_turn(
+        customer_id="customer-1",
+        message="My order is delayed and I want to complain",
+    )
+
+    assert len(response.blocks) == 1
+    assert isinstance(
+        response.blocks[0],
+        SupportEscalationBlock,
+    )
+    assert response.blocks[0].ticket_id == "ticket-123"
+    assert response.blocks[0].status == "open"
+    assert "ticket-123" in response.content
+
+    assert calls["customer_id"] == "customer-1"
+    assert calls["conversation_id"] == "conversation-1"
+    assert calls["description"] == (
+        "My order is delayed and I want to complain"
+    )
+    assert calls["sentiment"] == "negative"
+    assert calls["priority"] == "high"
+    assert "Detected sentiment: negative" in calls["handoff_summary"]
+    assert calls["agent_context"]["source"] == "support_agent"
+    assert calls["agent_context"]["sentiment"] == "negative"
+
+
+def test_support_ticket_still_created_if_recent_history_fails(
+    monkeypatch,
+    fake_persistence,
+):
+    monkeypatch.setattr(
+        orchestrator_module.memory_agent,
+        "load_context",
+        lambda customer_id: {},
+    )
+
+    def fail_history(*args, **kwargs):
+        raise RuntimeError("Simulated history retrieval failure")
+
+    monkeypatch.setattr(
+        orchestrator_module.chat_service,
+        "list_recent_messages",
+        fail_history,
+    )
+
+    calls = {}
+
+    def fake_create_ticket(**kwargs):
+        calls.update(kwargs)
+        return {
+            "ticket_id": "ticket-history-fallback",
+            "status": "open",
+            "subject": kwargs["subject"],
+        }
+
+    monkeypatch.setattr(
+        orchestrator_module,
+        "create_support_ticket",
+        fake_create_ticket,
+    )
+
+    response = orchestrator_agent.process_turn(
+        customer_id="customer-1",
+        message="My order is delayed and I want to complain",
+    )
+
+    assert len(response.blocks) == 1
+    assert response.blocks[0].ticket_id == "ticket-history-fallback"
+    assert calls["sentiment"] == "negative"
+    assert calls["priority"] == "high"
+    assert "My order is delayed" in calls["handoff_summary"]
+
+
+def test_failed_support_ticket_has_no_success_block(
+    monkeypatch,
+    fake_persistence,
+):
+    monkeypatch.setattr(
+        orchestrator_module.memory_agent,
+        "load_context",
+        lambda customer_id: {},
+    )
+
+    def fail_create_ticket(**kwargs):
+        raise orchestrator_module.SupportTicketError(
+            "Simulated persistence failure"
+        )
+
+    monkeypatch.setattr(
+        orchestrator_module,
+        "create_support_ticket",
+        fail_create_ticket,
+    )
+
+    response = orchestrator_agent.process_turn(
+        customer_id="customer-1",
+        message="My order is delayed and I want to complain",
+    )
+
+    assert response.blocks == []
+    assert "couldn't create" in response.content.lower()
+    assert "ticket ID" not in response.content
+    assert (
+        "last_support_ticket_id"
+        not in fake_persistence
+    )

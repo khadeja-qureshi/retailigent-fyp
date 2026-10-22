@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException
+﻿from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
@@ -28,6 +28,9 @@ from app.api.v1.notifications import (
 
 from app.api.v1.memory import (
     router as memory_router,
+)
+from app.api.v1.feedback import (
+    router as feedback_router,
 )
 
 
@@ -168,3 +171,5 @@ def health():
             status_code=503,
             detail=f"Database connection failed: {str(exc)}",
         )
+
+app.include_router(feedback_router)

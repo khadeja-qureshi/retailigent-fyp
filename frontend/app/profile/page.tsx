@@ -17,6 +17,11 @@ import type {
   CustomerMemory,
 } from "@/lib/memory";
 
+import {
+  getEmailNotificationPreference,
+  updateEmailNotificationPreference,
+} from "@/lib/notifications";
+
 
 function memoryLabel(
   key: string
@@ -194,6 +199,32 @@ export default function ProfilePage() {
     );
 
 
+  const [
+    emailNotifications,
+    setEmailNotifications,
+  ] = useState(false);
+
+  const [
+    preferenceLoading,
+    setPreferenceLoading,
+  ] = useState(true);
+
+  const [
+    preferenceSaving,
+    setPreferenceSaving,
+  ] = useState(false);
+
+  const [
+    preferenceError,
+    setPreferenceError,
+  ] = useState<string | null>(null);
+
+  const [
+    preferenceNotice,
+    setPreferenceNotice,
+  ] = useState<string | null>(null);
+
+
   const loadMemories =
     useCallback(
       async () => {
@@ -245,6 +276,69 @@ export default function ProfilePage() {
   }, [
     loadMemories,
   ]);
+
+
+  useEffect(() => {
+    let active = true;
+
+    async function loadPreference() {
+      try {
+        const result = await getEmailNotificationPreference();
+        if (active) {
+          setEmailNotifications(result.allow_email_notifications);
+          setPreferenceError(null);
+        }
+      } catch (caught) {
+        if (active) {
+          setPreferenceError(
+            caught instanceof Error
+              ? caught.message
+              : "Email notification preference could not be loaded.",
+          );
+        }
+      } finally {
+        if (active) {
+          setPreferenceLoading(false);
+        }
+      }
+    }
+
+    void loadPreference();
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+
+  async function handleEmailPreferenceChange(
+    enabled: boolean,
+  ) {
+    if (preferenceSaving || preferenceLoading) {
+      return;
+    }
+
+    const previousValue = emailNotifications;
+    setEmailNotifications(enabled);
+    setPreferenceSaving(true);
+    setPreferenceError(null);
+    setPreferenceNotice(null);
+
+    try {
+      const result = await updateEmailNotificationPreference(enabled);
+      setEmailNotifications(result.allow_email_notifications);
+      setPreferenceNotice("Email notification preference saved.");
+    } catch (caught) {
+      setEmailNotifications(previousValue);
+      setPreferenceError(
+        caught instanceof Error
+          ? caught.message
+          : "Email notification preference could not be saved.",
+      );
+    } finally {
+      setPreferenceSaving(false);
+    }
+  }
 
 
   async function handleDelete(
@@ -429,6 +523,74 @@ export default function ProfilePage() {
             </div>
           )
         }
+
+
+        <section
+          aria-labelledby="email-preferences-heading"
+          className="mt-6 rounded-3xl border border-[#dccbc4] bg-[#fffaf7] p-5 shadow-sm sm:p-6"
+        >
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#7f2a3c]">
+            Notifications
+          </p>
+          <h2
+            id="email-preferences-heading"
+            className="mt-1 text-xl font-semibold text-[#332e34]"
+          >
+            Email notifications
+          </h2>
+          <p className="mt-2 text-sm leading-6 text-[#756369]">
+            Choose whether Retailigent may send you email notifications.
+            In-app notifications are controlled separately.
+          </p>
+
+          <div className="mt-4 flex flex-col gap-4 rounded-2xl border border-[#e2d5cf] bg-white/80 p-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="font-semibold text-[#332e34]">
+                Allow email notifications
+              </p>
+              <p className="mt-1 text-sm text-[#756369]">
+                {emailNotifications
+                  ? "Email notifications are enabled."
+                  : "Email notifications are turned off by default."}
+              </p>
+            </div>
+
+            <button
+              type="button"
+              role="switch"
+              aria-checked={emailNotifications}
+              aria-label="Allow email notifications"
+              disabled={preferenceLoading || preferenceSaving}
+              onClick={() => {
+                void handleEmailPreferenceChange(!emailNotifications);
+              }}
+              className={`inline-flex min-h-11 shrink-0 items-center justify-center rounded-xl px-5 py-2.5 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-50 ${
+                emailNotifications
+                  ? "bg-[#7f2a3c] text-white hover:bg-[#682132]"
+                  : "border border-[#dccbc4] bg-white text-[#674f56] hover:bg-[#f7ece7]"
+              }`}
+            >
+              {preferenceLoading
+                ? "Loading..."
+                : preferenceSaving
+                  ? "Saving..."
+                  : emailNotifications
+                    ? "Enabled"
+                    : "Disabled"}
+            </button>
+          </div>
+
+          {preferenceError && (
+            <p role="alert" className="mt-3 text-sm text-[#9b352e]">
+              {preferenceError}
+            </p>
+          )}
+          {preferenceNotice && (
+            <p role="status" className="mt-3 text-sm text-[#356b45]">
+              {preferenceNotice}
+            </p>
+          )}
+        </section>
 
 
         <section className="mt-6">

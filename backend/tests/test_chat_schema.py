@@ -141,3 +141,47 @@ def test_invalid_block_type_is_rejected():
                 }
             )
         )
+
+
+def test_support_escalation_block():
+    from app.schemas.chat import SupportEscalationBlock
+
+    block = SupportEscalationBlock(
+        ticket_id="ticket-123",
+        status="open",
+        subject="Delayed order",
+        message="Your support request has been created.",
+    )
+
+    assert block.type == "support_escalation"
+    assert block.ticket_id == "ticket-123"
+    assert block.status == "open"
+
+
+def test_support_escalation_block_discriminator():
+    block = block_adapter.validate_python(
+        {
+            "type": "support_escalation",
+            "ticket_id": "ticket-456",
+            "status": "open",
+            "subject": "Wrong item",
+            "message": "Your request has been recorded.",
+        }
+    )
+
+    from app.schemas.chat import SupportEscalationBlock
+
+    assert isinstance(block, SupportEscalationBlock)
+
+
+def test_support_escalation_rejects_invalid_status():
+    with pytest.raises(ValidationError):
+        block_adapter.validate_python(
+            {
+                "type": "support_escalation",
+                "ticket_id": "ticket-789",
+                "status": "secret_internal_state",
+                "subject": "Test",
+                "message": "Test",
+            }
+        )

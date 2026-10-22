@@ -1,6 +1,6 @@
 from typing import Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, StrictBool
 
 
 class NotificationResponse(BaseModel):
@@ -30,3 +30,12 @@ class MarkReadRequest(BaseModel):
 class MarkReadResponse(BaseModel):
     updated: int
     unread_count: int
+
+
+
+class EmailNotificationPreference(BaseModel):
+    allow_email_notifications: StrictBool
+
+
+class EmailNotificationPreferenceUpdate(BaseModel):
+    allow_email_notifications: StrictBool

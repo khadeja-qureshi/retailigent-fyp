@@ -1,4 +1,4 @@
-import type {
+﻿import type {
   CartResponse,
   WishlistResponse,
   Reservation,
@@ -204,6 +204,20 @@ export interface OrderConfirmationChatBlock {
 }
 
 
+export interface SupportEscalationChatBlock {
+  type: "support_escalation";
+  ticket_id: string;
+  status:
+    | "open"
+    | "in_progress"
+    | "waiting_customer"
+    | "escalated"
+    | "resolved"
+    | "closed";
+  subject: string;
+  message: string;
+}
+
 export interface NotificationListChatBlock {
   type:
     "notification_list";
@@ -224,7 +238,8 @@ export type RenderableBlock =
   | SmartCartRuleChatBlock
   | AlertChatBlock
   | OrderConfirmationChatBlock
-  | NotificationListChatBlock;
+  | NotificationListChatBlock
+  | SupportEscalationChatBlock;
 
 
 export interface ChatMessage {

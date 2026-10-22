@@ -249,3 +249,64 @@ def fail_delivery(delivery_id: str, error: str) -> None:
         "fail_notification_delivery",
         {"p_delivery_id": delivery_id, "p_error": error},
     ).execute()
+
+
+
+# ---------------------------------------------------------------------------
+# Customer-controlled email notification preference
+# ---------------------------------------------------------------------------
+
+def get_email_notification_preference(customer_id: str) -> dict:
+    """Return the customer's email opt-in state; missing rows default off."""
+    try:
+        response = (
+            supabase_admin
+            .table("customer_preferences")
+            .select("allow_email_notifications")
+            .eq("customer_id", customer_id)
+            .limit(1)
+            .execute()
+        )
+    except Exception as exc:
+        logger.exception("Could not load email notification preference")
+        raise HTTPException(
+            status_code=500,
+            detail="Email notification preferences could not be loaded.",
+        ) from exc
+
+    if not response.data:
+        return {"allow_email_notifications": False}
+
+    return {
+        "allow_email_notifications": bool(
+            response.data[0].get("allow_email_notifications", False)
+        )
+    }
+
+
+def set_email_notification_preference(
+    customer_id: str,
+    enabled: bool,
+) -> dict:
+    """Upsert only the authenticated customer's email opt-in preference."""
+    try:
+        (
+            supabase_admin
+            .table("customer_preferences")
+            .upsert(
+                {
+                    "customer_id": customer_id,
+                    "allow_email_notifications": enabled,
+                },
+                on_conflict="customer_id",
+            )
+            .execute()
+        )
+    except Exception as exc:
+        logger.exception("Could not update email notification preference")
+        raise HTTPException(
+            status_code=500,
+            detail="Email notification preferences could not be updated.",
+        ) from exc
+
+    return {"allow_email_notifications": enabled}

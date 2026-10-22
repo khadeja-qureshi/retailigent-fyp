@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import re
 
@@ -867,6 +867,44 @@ def classify_intent(
     text = _normalize(
         message
     )
+
+    if _contains_any(
+        text,
+        {
+            "customer support",
+            "customer service",
+            "talk to a human",
+            "speak to a human",
+            "human agent",
+            "live agent",
+            "file a complaint",
+            "make a complaint",
+            "i want to complain",
+            "complaint",
+            "complain",
+            "refund",
+            "wrong item",
+            "damaged item",
+            "broken item",
+            "order delayed",
+            "order late",
+            "delivery delayed",
+            "late delivery",
+            "not received my order",
+            "never received",
+            "poor service",
+            "bad experience",
+            "not satisfied",
+            "shikayat",
+            "complaint karni",
+            "masla hal",
+            "customer service se baat",
+            "insan se baat",
+            "insaan se baat",
+            "support chahiye",
+        },
+    ):
+        return "support_request"
 
     if _contains_any(
         text,
