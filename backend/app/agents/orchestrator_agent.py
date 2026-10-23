@@ -62,6 +62,9 @@ from app.services.support_service import (
     SupportTicketError,
     create_support_ticket,
 )
+from app.services.demand_signal_service import (
+    record_demand_signal,
+)
 
 
 logger = logging.getLogger(
@@ -1307,6 +1310,10 @@ class OrchestratorAgent:
                         parsed.entities.min_price,
                     "max_price":
                         parsed.entities.max_price,
+                    "track_demand":
+                        True,
+                    "customer_id":
+                        customer_id,
                 }
 
                 results = (
@@ -1468,6 +1475,59 @@ class OrchestratorAgent:
                         jobs=jobs,
                     )
                 )
+
+                requested_branch = (
+                    parsed
+                    .entities
+                    .branch_name
+                )
+
+                for variant_id, inventory in zip(
+                    variant_ids,
+                    inventory_results,
+                    strict=True,
+                ):
+                    if not inventory:
+                        continue
+
+                    relevant_rows = []
+                    for row in inventory:
+                        branch = row.get("branch") or {}
+                        if not branch:
+                            continue
+
+                        if (
+                            requested_branch
+                            and str(branch.get("name") or "").strip().lower()
+                            != requested_branch.strip().lower()
+                        ):
+                            continue
+
+                        relevant_rows.append(row)
+
+                    if (
+                        relevant_rows
+                        and all(
+                            int(row.get("available_quantity") or 0) <= 0
+                            for row in relevant_rows
+                        )
+                    ):
+                        record_demand_signal(
+                            signal_type="insufficient_stock",
+                            customer_id=customer_id,
+                            variant_id=variant_id,
+                            branch_id=(
+                                str(relevant_rows[0].get("branch_id"))
+                                if requested_branch
+                                and relevant_rows[0].get("branch_id") is not None
+                                else None
+                            ),
+                            metadata={
+                                "requested_branch": requested_branch,
+                                "checked_branch_count": len(relevant_rows),
+                                "source": "stock_check",
+                            },
+                        )
 
                 stock_blocks = [
                     build_stock_status_block(

@@ -579,6 +579,9 @@ def test_orchestrator_product_search(
             == "M"
         )
 
+        assert kwargs["track_demand"] is True
+        assert kwargs["customer_id"] == "customer-1"
+
         return [
             {
                 "product_id":
@@ -778,6 +781,143 @@ def test_orchestrator_stock_check_from_second_result(
         == "variant-2"
     )
 
+
+
+def test_stock_check_records_insufficient_stock(
+    monkeypatch,
+    fake_persistence,
+):
+    monkeypatch.setattr(
+        orchestrator_module.memory_agent,
+        "load_context",
+        lambda customer_id: {},
+    )
+    from unittest.mock import patch
+
+    fake_persistence["last_search_variant_ids"] = [
+        "variant-1",
+    ]
+    fake_persistence["last_variant_id"] = "variant-1"
+
+    def fake_stock(variant_id):
+        return [
+            {
+                "branch_id": "branch-1",
+                "variant_id": variant_id,
+                "available_quantity": 0,
+                "status": "out_of_stock",
+                "branch": {
+                    "id": "branch-1",
+                    "name": "Gulberg",
+                    "city": "Lahore",
+                    "area": "Gulberg",
+                    "address": "Test address",
+                },
+            },
+            {
+                "branch_id": "branch-2",
+                "variant_id": variant_id,
+                "available_quantity": 0,
+                "status": "out_of_stock",
+                "branch": {
+                    "id": "branch-2",
+                    "name": "DHA",
+                    "city": "Lahore",
+                    "area": "DHA",
+                    "address": "Test address",
+                },
+            },
+        ]
+
+    monkeypatch.setattr(
+        orchestrator_module.inventory_agent,
+        "get_stock_snapshot_with_branches",
+        fake_stock,
+    )
+
+    with patch.object(
+        orchestrator_module,
+        "record_demand_signal",
+    ) as record_signal:
+        orchestrator_agent.process_turn(
+            customer_id="customer-1",
+            conversation_id="conversation-1",
+            message="Is it in stock?",
+        )
+
+    record_signal.assert_called_once()
+    kwargs = record_signal.call_args.kwargs
+
+    assert kwargs["signal_type"] == "insufficient_stock"
+    assert kwargs["customer_id"] == "customer-1"
+    assert kwargs["variant_id"] == "variant-1"
+    assert kwargs["metadata"]["source"] == "stock_check"
+    assert kwargs["metadata"]["checked_branch_count"] == 2
+
+
+def test_stock_check_does_not_record_demand_when_stock_available(
+    monkeypatch,
+    fake_persistence,
+):
+    monkeypatch.setattr(
+        orchestrator_module.memory_agent,
+        "load_context",
+        lambda customer_id: {},
+    )
+    from unittest.mock import patch
+
+    fake_persistence["last_search_variant_ids"] = [
+        "variant-1",
+    ]
+    fake_persistence["last_variant_id"] = "variant-1"
+
+    def fake_stock(variant_id):
+        return [
+            {
+                "branch_id": "branch-1",
+                "variant_id": variant_id,
+                "available_quantity": 4,
+                "status": "available",
+                "branch": {
+                    "id": "branch-1",
+                    "name": "Gulberg",
+                    "city": "Lahore",
+                    "area": "Gulberg",
+                    "address": "Test address",
+                },
+            },
+            {
+                "branch_id": "branch-2",
+                "variant_id": variant_id,
+                "available_quantity": 0,
+                "status": "out_of_stock",
+                "branch": {
+                    "id": "branch-2",
+                    "name": "DHA",
+                    "city": "Lahore",
+                    "area": "DHA",
+                    "address": "Test address",
+                },
+            },
+        ]
+
+    monkeypatch.setattr(
+        orchestrator_module.inventory_agent,
+        "get_stock_snapshot_with_branches",
+        fake_stock,
+    )
+
+    with patch.object(
+        orchestrator_module,
+        "record_demand_signal",
+    ) as record_signal:
+        orchestrator_agent.process_turn(
+            customer_id="customer-1",
+            conversation_id="conversation-1",
+            message="Is it in stock?",
+        )
+
+    record_signal.assert_not_called()
 
 def test_orchestrator_creates_auto_buy_smart_cart(
     monkeypatch,

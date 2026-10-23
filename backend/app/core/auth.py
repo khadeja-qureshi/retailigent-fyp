@@ -1,4 +1,4 @@
-from typing import Callable
+﻿from typing import Callable
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import (
@@ -49,6 +49,37 @@ def get_current_user_id(
     return user.id
 
 
+
+def get_current_user_roles(
+    user=Depends(get_current_user),
+) -> list[str]:
+    """
+    Return every application role assigned to the authenticated user.
+    """
+
+    response = (
+        supabase_admin
+        .table("user_roles")
+        .select("role")
+        .eq("user_id", user.id)
+        .execute()
+    )
+
+    roles = list(dict.fromkeys(
+        row["role"]
+        for row in (response.data or [])
+        if row.get("role")
+    ))
+
+    if not roles:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="No application role assigned to this user",
+        )
+
+    return roles
+
+
 def get_current_user_role(
     user=Depends(get_current_user),
 ) -> str:
@@ -78,22 +109,22 @@ def get_current_user_role(
 
 def require_role(*allowed_roles: str) -> Callable:
     """
-    Create a FastAPI dependency that requires one of the given roles.
+    Create a FastAPI dependency that accepts any assigned allowed role.
     """
 
     def role_dependency(
-        role: str = Depends(get_current_user_role),
+        roles: list[str] = Depends(get_current_user_roles),
     ):
-        if role not in allowed_roles:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Insufficient permissions",
-            )
+        for allowed_role in allowed_roles:
+            if allowed_role in roles:
+                return allowed_role
 
-        return role
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Insufficient permissions",
+        )
 
     return role_dependency
-
 
 require_customer = require_role(CUSTOMER_ROLE)
 require_staff = require_role(STAFF_ROLE, ADMIN_ROLE)

@@ -1,9 +1,10 @@
-from fastapi.testclient import TestClient
+﻿from fastapi.testclient import TestClient
 
 import app.api.v1.notifications as notifications_module
 from app.core.auth import (
     get_current_user_id,
     get_current_user_role,
+    get_current_user_roles,
     require_customer,
 )
 from app.main import app
@@ -20,6 +21,7 @@ def _customer_role():
 def _install_customer_auth():
     app.dependency_overrides[get_current_user_id] = _customer_id
     app.dependency_overrides[require_customer] = _customer_role
+    app.dependency_overrides[get_current_user_roles] = lambda: ["customer"]
 
 
 def _clear_auth():
@@ -111,6 +113,7 @@ def test_invalid_preference_payload_is_rejected():
 def test_non_customer_cannot_update_email_preference(monkeypatch):
     app.dependency_overrides[get_current_user_id] = _customer_id
     app.dependency_overrides[get_current_user_role] = lambda: "staff"
+    app.dependency_overrides[get_current_user_roles] = lambda: ["staff"]
     calls = []
     monkeypatch.setattr(
         notifications_module,

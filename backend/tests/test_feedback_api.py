@@ -1,4 +1,4 @@
-from uuid import UUID
+﻿from uuid import UUID
 
 from fastapi.testclient import TestClient
 
@@ -6,6 +6,7 @@ import app.api.v1.feedback as feedback_module
 from app.core.auth import (
     get_current_user_id,
     get_current_user_role,
+    get_current_user_roles,
     require_customer,
 )
 from app.main import app
@@ -28,10 +29,12 @@ def _install_customer_auth():
     app.dependency_overrides[get_current_user_id] = _customer_id
     app.dependency_overrides[require_customer] = _customer_role
     app.dependency_overrides[get_current_user_role] = _customer_role
+    app.dependency_overrides[get_current_user_roles] = lambda: ["customer"]
 
 
 def _install_staff_auth():
     app.dependency_overrides[get_current_user_role] = _staff_role
+    app.dependency_overrides[get_current_user_roles] = lambda: ["staff"]
 
 
 def _clear_auth():

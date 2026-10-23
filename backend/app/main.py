@@ -173,3 +173,14 @@ def health():
         )
 
 app.include_router(feedback_router)
+
+from app.api.v1.analytics import (
+    router as analytics_router,
+)
+
+app.include_router(analytics_router)
+
+
+from app.api.v1.support import router as support_router
+
+app.include_router(support_router)

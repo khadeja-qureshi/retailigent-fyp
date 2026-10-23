@@ -1,6 +1,7 @@
 from typing import Any, Optional
 
 from app.services.search_service import search_variants
+from app.services.demand_signal_service import record_demand_signal
 
 
 def _normalize_category_tokens(
@@ -109,6 +110,9 @@ class ProductAgent:
         category: Optional[str] = None,
         min_price: Optional[float] = None,
         max_price: Optional[float] = None,
+        track_demand: bool = False,
+        customer_id: Optional[str] = None,
+        branch_id: Optional[str] = None,
     ) -> list[dict[str, Any]]:
         """
         Search products using hybrid semantic/keyword retrieval and
@@ -132,12 +136,22 @@ class ProductAgent:
         if not query or not query.strip():
             return []
 
+        normalized_query = query.strip()
         results = search_variants(
-            query=query.strip(),
+            query=normalized_query,
             match_count=match_count,
         )
 
         if not results:
+            if track_demand:
+                record_demand_signal(
+                    signal_type="no_catalog_match",
+                    customer_id=customer_id,
+                    branch_id=branch_id,
+                    requested_size=size,
+                    requested_color=color,
+                    metadata={"query": normalized_query},
+                )
             return []
 
         filtered_results = []
@@ -312,6 +326,31 @@ class ProductAgent:
 
             filtered_results.append(
                 result
+            )
+
+        if not filtered_results and track_demand:
+            # Attribute the signal to a real candidate only when its
+            # identifiers are available. Requested attributes and
+            # candidate_count remain the primary evidence of unmet demand.
+            candidate = results[0]
+
+            record_demand_signal(
+                signal_type="requested_variant_unavailable",
+                customer_id=customer_id,
+                product_id=candidate.get("product_id"),
+                variant_id=candidate.get("variant_id"),
+                branch_id=branch_id,
+                requested_size=size,
+                requested_color=color,
+                metadata={
+                    "query": normalized_query,
+                    "requested_material": material,
+                    "requested_category": category,
+                    "min_price": min_price,
+                    "max_price": max_price,
+                    "requested_city": city,
+                    "candidate_count": len(results),
+                },
             )
 
         return filtered_results
