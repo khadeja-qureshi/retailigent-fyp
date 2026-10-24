@@ -184,3 +184,7 @@ app.include_router(analytics_router)
 from app.api.v1.support import router as support_router
 
 app.include_router(support_router)
+
+from app.api.v1.audit import router as audit_router
+
+app.include_router(audit_router)
