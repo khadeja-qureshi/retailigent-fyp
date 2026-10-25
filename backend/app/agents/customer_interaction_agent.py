@@ -195,24 +195,13 @@ UUID_RE = re.compile(
 NUMBER = r"([0-9]+(?:\.[0-9]+)?)"
 
 
-def _normalize(
-    text: str,
-) -> str:
+def _normalize(text: str) -> str:
     text = text.strip().lower()
-
-    text = re.sub(
-        r"\s+",
-        " ",
-        text,
-    )
-
+    text = re.sub(r"\s+", " ", text)
     return text
 
 
-def _has_phrase(
-    text: str,
-    phrase: str,
-) -> bool:
+def _has_phrase(text: str, phrase: str) -> bool:
     if " " in phrase:
         return phrase in text
 
@@ -229,31 +218,19 @@ def _contains_any(
     phrases: set[str],
 ) -> bool:
     return any(
-        _has_phrase(
-            text,
-            phrase,
-        )
+        _has_phrase(text, phrase)
         for phrase in phrases
     )
 
 
-def _parse_number(
-    value: str,
-) -> float:
+def _parse_number(value: str) -> float:
     return float(
-        value.replace(
-            ",",
-            "",
-        )
+        value.replace(",", "")
     )
 
 
-def detect_language(
-    message: str,
-) -> str:
-    text = _normalize(
-        message
-    )
+def detect_language(message: str) -> str:
+    text = _normalize(message)
 
     tokens = set(
         re.findall(
@@ -263,19 +240,14 @@ def detect_language(
     )
 
     has_roman_urdu = bool(
-        tokens
-        & ROMAN_URDU_MARKERS
+        tokens & ROMAN_URDU_MARKERS
     )
 
     has_english = bool(
-        tokens
-        & ENGLISH_MARKERS
+        tokens & ENGLISH_MARKERS
     )
 
-    if (
-        has_roman_urdu
-        and has_english
-    ):
+    if has_roman_urdu and has_english:
         return "mixed"
 
     if has_roman_urdu:
@@ -287,9 +259,7 @@ def detect_language(
 def _extract_variant_id(
     text: str,
 ) -> str | None:
-    match = UUID_RE.search(
-        text
-    )
+    match = UUID_RE.search(text)
 
     if not match:
         return None
@@ -297,17 +267,66 @@ def _extract_variant_id(
     return match.group(0)
 
 
+def _extract_product_name(
+    text: str,
+) -> str | None:
+    """
+    Extract a product phrase from natural
+    branch/location questions.
+    """
+
+    patterns = [
+        (
+            r"\bwhich\s+"
+            r"(?:branch|store)\s+"
+            r"has\s+"
+            r"(.+?)"
+            r"(?:[?.!]|$)"
+        ),
+        (
+            r"\bwhere\s+"
+            r"(?:can\s+i\s+find|is)\s+"
+            r"(.+?)"
+            r"(?:[?.!]|$)"
+        ),
+    ]
+
+    for pattern in patterns:
+        match = re.search(
+            pattern,
+            text,
+            flags=re.IGNORECASE,
+        )
+
+        if not match:
+            continue
+
+        value = (
+            match.group(1).strip()
+        )
+
+        # "Which branch has size M?"
+        # means refine previous product context,
+        # not a product literally called "size M".
+        if re.match(
+            r"^(?:size|stock|availability)\b",
+            value,
+            flags=re.IGNORECASE,
+        ):
+            return None
+
+        return value
+
+    return None
+
+
 def _extract_color(
     text: str,
 ) -> str | None:
-    for (
-        word,
-        normalized,
-    ) in COLOR_ALIASES.items():
-        if _has_phrase(
-            text,
-            word,
-        ):
+    for word, normalized in (
+        COLOR_ALIASES.items()
+    ):
+        if _has_phrase(text, word):
             return normalized
 
     return None
@@ -316,14 +335,10 @@ def _extract_color(
 def _extract_material(
     text: str,
 ) -> str | None:
-    for (
-        word,
-        normalized,
-    ) in MATERIAL_ALIASES.items():
-        if _has_phrase(
-            text,
-            word,
-        ):
+    for word, normalized in (
+        MATERIAL_ALIASES.items()
+    ):
+        if _has_phrase(text, word):
             return normalized
 
     return None
@@ -332,14 +347,10 @@ def _extract_material(
 def _extract_category(
     text: str,
 ) -> str | None:
-    for (
-        word,
-        normalized,
-    ) in CATEGORY_ALIASES.items():
-        if _has_phrase(
-            text,
-            word,
-        ):
+    for word, normalized in (
+        CATEGORY_ALIASES.items()
+    ):
+        if _has_phrase(text, word):
             return normalized
 
     return None
@@ -348,14 +359,10 @@ def _extract_category(
 def _extract_branch(
     text: str,
 ) -> str | None:
-    for (
-        word,
-        normalized,
-    ) in BRANCH_ALIASES.items():
-        if _has_phrase(
-            text,
-            word,
-        ):
+    for word, normalized in (
+        BRANCH_ALIASES.items()
+    ):
+        if _has_phrase(text, word):
             return normalized
 
     return None
@@ -364,12 +371,12 @@ def _extract_branch(
 def _extract_size(
     text: str,
 ) -> str | None:
-    # Examples:
-    # "size M"
-    # "size medium"
-    # "size: XL"
     size_first_match = re.search(
-        r"\bsize\s*[:\-]?\s*"
+        r"\b"
+        r"(?:my\s+|usual\s+|preferred\s+)?"
+        r"size\s*"
+        r"(?:is\s*)?"
+        r"[:\-]?\s*"
         r"(xxl|xl|xs|s|m|l|"
         r"small|medium|large|"
         r"extra small|extra large)"
@@ -385,14 +392,8 @@ def _extract_size(
             .lower()
         )
 
-        return SIZE_ALIASES.get(
-            raw
-        )
+        return SIZE_ALIASES.get(raw)
 
-    # Examples:
-    # "medium size"
-    # "XL size"
-    # "in medium size"
     size_last_match = re.search(
         r"\b"
         r"(xxl|xl|xs|s|m|l|"
@@ -410,14 +411,8 @@ def _extract_size(
             .lower()
         )
 
-        return SIZE_ALIASES.get(
-            raw
-        )
+        return SIZE_ALIASES.get(raw)
 
-    # Examples:
-    # "kurta M"
-    # "shirt XL"
-    # "dress medium"
     product_size_match = re.search(
         r"\b"
         r"(?:kurta|kurtas|"
@@ -440,9 +435,7 @@ def _extract_size(
             .lower()
         )
 
-        return SIZE_ALIASES.get(
-            raw
-        )
+        return SIZE_ALIASES.get(raw)
 
     return None
 
@@ -454,10 +447,9 @@ def _extract_ordinals(
         tuple[int, int]
     ] = []
 
-    for (
-        word,
-        ordinal,
-    ) in ORDINAL_ALIASES.items():
+    for word, ordinal in (
+        ORDINAL_ALIASES.items()
+    ):
         pattern = (
             re.escape(word)
             if " " in word
@@ -481,20 +473,14 @@ def _extract_ordinals(
             )
 
     matches.sort(
-        key=lambda item:
-            item[0]
+        key=lambda item: item[0]
     )
 
     ordinals: list[int] = []
 
-    for (
-        _,
-        ordinal,
-    ) in matches:
+    for _, ordinal in matches:
         if ordinal not in ordinals:
-            ordinals.append(
-                ordinal
-            )
+            ordinals.append(ordinal)
 
     return ordinals
 
@@ -502,11 +488,7 @@ def _extract_ordinals(
 def _extract_ordinal(
     text: str,
 ) -> int | None:
-    ordinals = (
-        _extract_ordinals(
-            text
-        )
-    )
+    ordinals = _extract_ordinals(text)
 
     if not ordinals:
         return None
@@ -638,12 +620,9 @@ def _extract_price_range(
         )
 
         if match:
-            min_price = (
-                _parse_number(
-                    match.group(1)
-                )
+            min_price = _parse_number(
+                match.group(1)
             )
-
             break
 
     for pattern in max_patterns:
@@ -654,12 +633,9 @@ def _extract_price_range(
         )
 
         if match:
-            max_price = (
-                _parse_number(
-                    match.group(1)
-                )
+            max_price = _parse_number(
+                match.group(1)
             )
-
             break
 
     return (
@@ -699,10 +675,8 @@ def _extract_target_price(
         )
 
         if match:
-            return (
-                _parse_number(
-                    match.group(1)
-                )
+            return _parse_number(
+                match.group(1)
             )
 
     return None
@@ -774,89 +748,62 @@ def extract_entities(
     *,
     intent: str,
 ) -> ExtractedEntities:
-    text = _normalize(
-        message
-    )
+    text = _normalize(message)
 
     (
         min_price,
         max_price,
-    ) = _extract_price_range(
-        text
-    )
+    ) = _extract_price_range(text)
 
     target_price = None
 
     if intent == "smart_cart_create":
         target_price = (
-            _extract_target_price(
-                text
-            )
+            _extract_target_price(text)
         )
 
         if target_price is not None:
             max_price = None
 
     return ExtractedEntities(
+        product_name=(
+            _extract_product_name(text)
+        ),
         variant_id=(
-            _extract_variant_id(
-                text
-            )
+            _extract_variant_id(text)
         ),
         category=(
-            _extract_category(
-                text
-            )
+            _extract_category(text)
         ),
         color=(
-            _extract_color(
-                text
-            )
+            _extract_color(text)
         ),
         size=(
-            _extract_size(
-                text
-            )
+            _extract_size(text)
         ),
         material=(
-            _extract_material(
-                text
-            )
+            _extract_material(text)
         ),
         branch_name=(
-            _extract_branch(
-                text
-            )
+            _extract_branch(text)
         ),
         min_price=min_price,
         max_price=max_price,
-        target_price=(
-            target_price
-        ),
+        target_price=target_price,
         min_discount_percentage=(
-            _extract_discount(
-                text
-            )
+            _extract_discount(text)
         ),
         quantity=(
-            _extract_quantity(
-                text
-            )
+            _extract_quantity(text)
         ),
         authorization_mode=(
-            _extract_authorization_mode(
-                text
-            )
+            _extract_authorization_mode(text)
         ),
         ordinal_reference=(
-            _extract_ordinal(
-                text
-            )
+            _extract_ordinal(text)
         ),
         ordinal_references=(
-            _extract_ordinals(
-                text
-            )
+            _extract_ordinals(text)
         ),
     )
 
@@ -864,9 +811,7 @@ def extract_entities(
 def classify_intent(
     message: str,
 ) -> str:
-    text = _normalize(
-        message
-    )
+    text = _normalize(message)
 
     if _contains_any(
         text,
@@ -996,7 +941,8 @@ def classify_intent(
         or
         bool(
             re.search(
-                r"\badd\b.*\bto\s+(?:my\s+)?cart\b",
+                r"\badd\b.*\bto\s+"
+                r"(?:my\s+)?cart\b",
                 text,
                 flags=re.IGNORECASE,
             )
@@ -1004,7 +950,8 @@ def classify_intent(
         or
         bool(
             re.search(
-                r"\bput\b.*\bin\s+(?:my\s+)?cart\b",
+                r"\bput\b.*\bin\s+"
+                r"(?:my\s+)?cart\b",
                 text,
                 flags=re.IGNORECASE,
             )
@@ -1088,6 +1035,52 @@ def classify_intent(
     ):
         return "purchase"
 
+    preference_statement = (
+        _contains_any(
+            text,
+            {
+                "i prefer",
+                "i like",
+                "my usual size",
+                "my size is",
+                "i usually wear",
+                "i normally wear",
+                "mera size",
+                "mujhe pasand",
+            },
+        )
+        and not
+        _contains_any(
+            text,
+            {
+                "show",
+                "find",
+                "search",
+                "recommend",
+                "suggest",
+            },
+        )
+    )
+
+    if preference_statement:
+        return "preference_update"
+
+    if (
+        re.search(
+            r"\bwhich\s+(?:branch|store)\b",
+            text,
+            flags=re.IGNORECASE,
+        )
+        or
+        re.search(
+            r"\bwhere\b.*"
+            r"\b(?:available|stock|find|get)\b",
+            text,
+            flags=re.IGNORECASE,
+        )
+    ):
+        return "store_location_search"
+
     if _contains_any(
         text,
         {
@@ -1115,6 +1108,38 @@ def classify_intent(
         },
     ):
         return "store_location_search"
+
+    occasion_recommendation = (
+        _contains_any(
+            text,
+            {
+                "wedding",
+                "mehndi",
+                "eid",
+                "party",
+                "formal event",
+                "office wear",
+                "casual wear",
+                "winter wedding",
+            },
+        )
+        and
+        _contains_any(
+            text,
+            {
+                "show",
+                "find",
+                "recommend",
+                "suggest",
+                "something",
+                "suitable",
+                "wear",
+            },
+        )
+    )
+
+    if occasion_recommendation:
+        return "recommendation_search"
 
     if _contains_any(
         text,
@@ -1177,9 +1202,7 @@ def _has_item_reference(
         or
         entities.ordinal_reference
         or
-        _has_context_reference(
-            text
-        )
+        _has_context_reference(text)
         or
         entities.category
     )
@@ -1206,8 +1229,8 @@ def _clarification_for(
 
     if (
         intent in needs_item
-        and
-        not _has_item_reference(
+        and not
+        _has_item_reference(
             text,
             entities,
         )
@@ -1227,7 +1250,8 @@ def _clarification_for(
         and
         entities.target_price is None
         and
-        entities.min_discount_percentage is None
+        entities.min_discount_percentage
+        is None
     ):
         return (
             True,
@@ -1241,7 +1265,8 @@ def _clarification_for(
     if (
         intent == "smart_cart_create"
         and
-        entities.authorization_mode is None
+        entities.authorization_mode
+        is None
     ):
         return (
             True,
@@ -1338,9 +1363,10 @@ class CustomerInteractionAgent:
     Deterministic customer-language layer.
 
     Detects language, intent and entities and
-    composes customer-facing responses. It does
-    not determine authoritative pricing, stock,
-    branch availability or purchase results.
+    composes customer-facing responses.
+
+    It never determines authoritative price,
+    stock, reservation or purchase outcomes.
     """
 
     agent_key = (
@@ -1378,47 +1404,21 @@ class CustomerInteractionAgent:
             )
         )
 
+        # IMPORTANT:
+        #
+        # Do NOT inject remembered size/material/
+        # color/category into an ordinary search.
+        #
+        # "Show me kurtas" must remain:
+        #     category = kurta
+        #
+        # It must NOT silently become:
+        #     category = kurta
+        #     size = XL
+        #
+        # Personalization belongs exclusively to
+        # RecommendationAgent.
         context_used: dict = {}
-
-        if (
-            intent
-            == "product_search"
-            and
-            entities.size is None
-        ):
-            remembered_size = (
-                _reliable_memory_value(
-                    customer_context,
-                    "usual_size",
-                )
-            )
-
-            if isinstance(
-                remembered_size,
-                str,
-            ):
-                normalized_size = (
-                    SIZE_ALIASES.get(
-                        remembered_size
-                        .strip()
-                        .lower()
-                    )
-                )
-
-                if normalized_size:
-                    entities = (
-                        entities
-                        .model_copy(
-                            update={
-                                "size":
-                                    normalized_size,
-                            }
-                        )
-                    )
-
-                    context_used[
-                        "usual_size"
-                    ] = normalized_size
 
         text = _normalize(
             raw_message
@@ -1433,24 +1433,22 @@ class CustomerInteractionAgent:
             entities=entities,
         )
 
-        return (
-            ParsedCustomerMessage(
-                raw_message=(
-                    raw_message
-                ),
-                language=language,
-                intent=intent,
-                entities=entities,
-                context_used=(
-                    context_used
-                ),
-                requires_clarification=(
-                    requires_clarification
-                ),
-                clarification_question=(
-                    clarification_question
-                ),
-            )
+        return ParsedCustomerMessage(
+            raw_message=(
+                raw_message
+            ),
+            language=language,
+            intent=intent,
+            entities=entities,
+            context_used=(
+                context_used
+            ),
+            requires_clarification=(
+                requires_clarification
+            ),
+            clarification_question=(
+                clarification_question
+            ),
         )
 
     def compose_generic_clarification(
@@ -1467,8 +1465,7 @@ class CustomerInteractionAgent:
             )
 
         return (
-            "Could you clarify "
-            "what you mean?"
+            "Could you clarify what you mean?"
         )
 
     def compose_search_response(
@@ -1606,13 +1603,11 @@ class CustomerInteractionAgent:
             "mixed",
         }:
             return (
-                "Abhi yeh item out of "
-                "stock hai."
+                "Abhi yeh item out of stock hai."
             )
 
         return (
-            "This item is currently "
-            "out of stock."
+            "This item is currently out of stock."
         )
 
     def compose_multi_stock_response(
@@ -1692,8 +1687,7 @@ class CustomerInteractionAgent:
             )
 
         return (
-            "Added the item to your "
-            "wishlist."
+            "Added the item to your wishlist."
         )
 
     def compose_item_reference_clarification(
@@ -1760,10 +1754,7 @@ class CustomerInteractionAgent:
         language: str,
         authorization_mode: str,
     ) -> str:
-        if (
-            authorization_mode
-            == "auto_buy"
-        ):
+        if authorization_mode == "auto_buy":
             if language in {
                 "roman_urdu",
                 "mixed",
@@ -1803,14 +1794,9 @@ class CustomerInteractionAgent:
         language: str,
         result: dict,
     ) -> str:
-        if (
-            result.get("success")
-            is True
-        ):
-            order_id = (
-                result.get(
-                    "order_id"
-                )
+        if result.get("success") is True:
+            order_id = result.get(
+                "order_id"
             )
 
             if language in {
@@ -1829,14 +1815,9 @@ class CustomerInteractionAgent:
             )
 
         reason = (
-            result.get(
-                "reason"
-            )
+            result.get("reason")
             or
-            (
-                "The purchase could "
-                "not be completed."
-            )
+            "The purchase could not be completed."
         )
 
         if language in {

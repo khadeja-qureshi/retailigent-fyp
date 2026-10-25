@@ -2,20 +2,19 @@
 
 import type { BranchMapChatBlock } from "@/lib/chat-types";
 
-
 export default function BranchMapBlock({
   block,
 }: {
   block: BranchMapChatBlock;
 }) {
   return (
-    <section className="rounded-2xl border border-neutral-800 bg-neutral-900/70 p-4">
-      <h3 className="text-base font-semibold text-neutral-100">
+    <section className="rounded-2xl border border-[#d8d2dd] bg-[#f7f4f8] p-4 text-[#332e34]">
+      <h3 className="text-base font-semibold text-[#332e34]">
         {block.title}
       </h3>
 
       {block.branches.length === 0 ? (
-        <p className="mt-3 text-sm text-neutral-400">
+        <p className="mt-3 text-sm text-[#716a73]">
           No matching active branches were found.
         </p>
       ) : (
@@ -38,34 +37,42 @@ export default function BranchMapBlock({
             return (
               <article
                 key={branch.branch_id}
-                className="rounded-xl border border-neutral-800 bg-neutral-950 p-4"
+                className="rounded-xl border border-[#ded8e2] bg-white p-4 shadow-sm"
               >
-                <h4 className="font-medium text-neutral-100">
+                <h4 className="font-semibold text-[#332e34]">
                   {branch.name}
                 </h4>
 
-                <p className="mt-1 text-sm text-neutral-400">
-                  {[branch.area, branch.city].filter(Boolean).join(", ")}
+                <p className="mt-1 text-sm text-[#716a73]">
+                  {[branch.area, branch.city]
+                    .filter(Boolean)
+                    .join(", ")}
                 </p>
 
                 {branch.address && (
-                  <p className="mt-2 text-sm text-neutral-300">
+                  <p className="mt-2 text-sm text-[#4f4851]">
                     {branch.address}
                   </p>
                 )}
 
                 {(branch.opening_time || branch.closing_time) && (
-                  <p className="mt-2 text-sm text-neutral-300">
-                    <span className="text-neutral-400">Hours: </span>
+                  <p className="mt-2 text-sm text-[#4f4851]">
+                    <span className="text-[#716a73]">
+                      Hours:{" "}
+                    </span>
+
                     {branch.opening_time ?? "Not listed"}
-                    {" ? "}
+                    {" – "}
                     {branch.closing_time ?? "Not listed"}
                   </p>
                 )}
 
                 {branch.phone && (
-                  <p className="mt-2 text-sm text-neutral-300">
-                    <span className="text-neutral-400">Phone: </span>
+                  <p className="mt-2 text-sm text-[#4f4851]">
+                    <span className="text-[#716a73]">
+                      Phone:{" "}
+                    </span>
+
                     <a
                       href={`tel:${branch.phone}`}
                       className="underline underline-offset-2"
@@ -80,7 +87,7 @@ export default function BranchMapBlock({
                     href={mapsUrl}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="mt-3 inline-flex text-sm font-medium text-blue-400 underline underline-offset-4 hover:text-blue-300"
+                    className="mt-3 inline-flex text-sm font-medium text-[#6667d9] underline underline-offset-4 hover:text-[#5052bd]"
                   >
                     Open in Google Maps
                   </a>

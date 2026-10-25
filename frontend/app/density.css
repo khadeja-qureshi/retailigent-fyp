@@ -1,0 +1,548 @@
+/*
+ * Retailigent application density / viewport rules.
+ *
+ * Purpose:
+ * - Keep the UI comfortable at 100% browser zoom.
+ * - Use the same visual density for customer and staff pages.
+ * - Keep the customer chat composer visible without page scrolling.
+ * - Keep the desktop navigation compact.
+ */
+
+
+/* ============================================================
+ * Shared sizing
+ * ============================================================ */
+
+:root {
+  --ri-navbar-height: 3.5rem;
+}
+
+
+/*
+ * Keep the normal 16px browser base on smaller screens.
+ */
+html {
+  font-size: 16px;
+}
+
+
+/*
+ * The current Retailigent UI was designed a little large.
+ *
+ * 15px on laptop/desktop screens makes Tailwind's rem-based
+ * spacing, typography, cards and controls slightly denser
+ * everywhere without requiring us to rewrite every page.
+ */
+@media (min-width: 1024px) {
+  html {
+    font-size: 15px;
+  }
+}
+
+
+body {
+  min-width: 320px;
+}
+
+
+/* ============================================================
+ * Shared desktop page density
+ * ============================================================ */
+
+@media (min-width: 1024px) {
+  /*
+   * Prevent excessively large page headings.
+   * Individual pages can still override these when necessary.
+   */
+  main h1 {
+    line-height: 1.15;
+  }
+
+
+  main h2 {
+    line-height: 1.2;
+  }
+
+
+  /*
+   * Keep forms comfortably compact.
+   */
+  input,
+  textarea,
+  select,
+  button {
+    line-height: 1.45;
+  }
+}
+
+
+/* ============================================================
+ * Customer chat desktop viewport
+ * ============================================================
+ *
+ * ChatWindow already renders:
+ *
+ * <main class="retailigent-chat">
+ *
+ * We use that existing class so no chat business logic needs
+ * to be rewritten.
+ * ============================================================ */
+
+@media (min-width: 1024px) {
+  .retailigent-chat {
+    width: 100%;
+
+    height:
+      calc(
+        100dvh
+        -
+        var(--ri-navbar-height)
+      ) !important;
+
+    min-height: 0 !important;
+
+    overflow:
+      hidden !important;
+  }
+
+
+  /*
+   * Main sidebar + conversation layout.
+   */
+  .retailigent-chat
+  > div {
+    width: 100%;
+
+    height: 100% !important;
+
+    min-height: 0 !important;
+
+    overflow:
+      hidden;
+  }
+
+
+  /*
+   * Conversation history sidebar.
+   */
+  .retailigent-chat
+  > div
+  > aside {
+    height: 100%;
+
+    min-height: 0;
+
+    overflow:
+      hidden;
+  }
+
+
+  /*
+   * The old code uses:
+   *
+   * sticky top-16 h-[calc(100dvh-4rem)]
+   *
+   * That was based on a 64px navbar and caused the chat page
+   * to become taller than the actual available viewport.
+   */
+  .retailigent-chat
+  > div
+  > aside
+  > div {
+    position:
+      static !important;
+
+    top:
+      auto !important;
+
+    height:
+      100% !important;
+
+    min-height:
+      0 !important;
+
+    overflow-y:
+      auto !important;
+
+    padding:
+      0.9rem !important;
+  }
+
+
+  /*
+   * Right-hand chat column.
+   */
+  .retailigent-chat
+  > div
+  > section {
+    display:
+      flex;
+
+    flex-direction:
+      column;
+
+    height:
+      100%;
+
+    min-height:
+      0 !important;
+
+    overflow:
+      hidden;
+  }
+
+
+  /*
+   * Shopping Assistant header.
+   */
+  .retailigent-chat
+  > div
+  > section
+  > header {
+    flex:
+      0 0 auto;
+
+    padding-top:
+      0.8rem !important;
+
+    padding-bottom:
+      0.8rem !important;
+  }
+
+
+  /*
+   * Messages / welcome content.
+   *
+   * This area scrolls independently.
+   */
+  .retailigent-chat
+  > div
+  > section
+  > section {
+    flex:
+      1 1 auto !important;
+
+    min-height:
+      0 !important;
+
+    overflow-x:
+      hidden;
+
+    overflow-y:
+      auto !important;
+  }
+
+
+  /*
+   * Existing message container currently has min-h-[50vh].
+   * Make it fill the actual available chat space instead.
+   */
+  .retailigent-chat
+  > div
+  > section
+  > section
+  > div {
+    min-height:
+      100% !important;
+
+    padding-top:
+      0.75rem !important;
+
+    padding-bottom:
+      0.75rem !important;
+  }
+
+
+  /*
+   * Empty conversation welcome screen.
+   *
+   * Reduce the large vertical whitespace so that the user can
+   * still see the composer at 100% zoom.
+   */
+  .retailigent-chat
+  > div
+  > section
+  > section
+  > div
+  > div.my-auto {
+    padding-top:
+      0.75rem !important;
+
+    padding-bottom:
+      0.75rem !important;
+  }
+
+
+  /*
+   * Welcome screen logo.
+   */
+  .retailigent-chat
+  > div
+  > section
+  > section
+  .my-auto
+  > div
+  > div:first-child {
+    width:
+      2.75rem;
+
+    height:
+      2.75rem;
+
+    border-radius:
+      0.9rem;
+  }
+
+
+  /*
+   * Reduce excessive spacing around empty-chat content.
+   */
+  .retailigent-chat
+  .my-auto h2 {
+    margin-top:
+      0.9rem !important;
+  }
+
+
+  .retailigent-chat
+  .my-auto h2
+  + p {
+    margin-top:
+      0.45rem !important;
+  }
+
+
+  /*
+   * Suggested prompt grid.
+   */
+  .retailigent-chat
+  .my-auto p
+  + div {
+    margin-top:
+      1rem !important;
+
+    gap:
+      0.55rem !important;
+  }
+
+
+  .retailigent-chat
+  .my-auto button {
+    min-height:
+      2.75rem !important;
+
+    padding:
+      0.7rem 0.9rem !important;
+
+    border-radius:
+      0.9rem !important;
+  }
+
+
+  /*
+   * Composer.
+   *
+   * ChatWindow currently uses `sticky bottom-0`.
+   * Inside a true viewport-height flex layout it should instead
+   * be a normal non-growing footer.
+   */
+  .retailigent-chat
+  > div
+  > section
+  > div:last-child {
+    position:
+      static !important;
+
+    bottom:
+      auto !important;
+
+    flex:
+      0 0 auto;
+
+    padding-top:
+      0.6rem !important;
+
+    padding-bottom:
+      0.6rem !important;
+  }
+
+
+  .retailigent-chat
+  > div
+  > section
+  > div:last-child
+  form {
+    border-radius:
+      1rem !important;
+
+    padding:
+      0.4rem !important;
+  }
+
+
+  /*
+   * Composer textarea.
+   */
+  .retailigent-chat
+  > div
+  > section
+  > div:last-child
+  textarea {
+    min-height:
+      2.8rem !important;
+
+    max-height:
+      7rem;
+
+    padding-top:
+      0.55rem !important;
+
+    padding-bottom:
+      0.55rem !important;
+  }
+
+
+  /*
+   * Smaller send/stop controls.
+   */
+  .retailigent-chat
+  > div
+  > section
+  > div:last-child
+  button {
+    min-height:
+      2.6rem !important;
+  }
+}
+
+
+/* ============================================================
+ * Customer chat tablet/mobile
+ * ============================================================ */
+
+@media (max-width: 1023px) {
+  /*
+   * Mobile can continue using normal document scrolling,
+   * especially because the bottom navigation also occupies space.
+   */
+  .retailigent-chat {
+    min-height:
+      calc(
+        100dvh
+        -
+        var(--ri-navbar-height)
+      );
+  }
+}
+
+
+/* ============================================================
+ * Shared admin/customer card density
+ * ============================================================ */
+
+@media (min-width: 1024px) {
+  /*
+   * The project uses rounded-3xl heavily. Keep the premium
+   * appearance but prevent the dashboard from feeling oversized.
+   */
+  main .rounded-3xl {
+    border-radius:
+      1.25rem;
+  }
+
+
+  main .rounded-2xl {
+    border-radius:
+      0.95rem;
+  }
+}
+
+
+/* ============================================================
+ * Scrollbars
+ * ============================================================ */
+
+.retailigent-chat * {
+  scrollbar-width:
+    thin;
+
+  scrollbar-color:
+    rgba(
+      119,
+      121,
+      222,
+      0.38
+    )
+    transparent;
+}
+
+
+.retailigent-chat
+::-webkit-scrollbar {
+  width:
+    6px;
+
+  height:
+    6px;
+}
+
+
+.retailigent-chat
+::-webkit-scrollbar-track {
+  background:
+    transparent;
+}
+
+
+.retailigent-chat
+::-webkit-scrollbar-thumb {
+  border-radius:
+    999px;
+
+  background:
+    rgba(
+      119,
+      121,
+      222,
+      0.38
+    );
+}
+
+
+.retailigent-chat
+::-webkit-scrollbar-thumb:hover {
+  background:
+    rgba(
+      119,
+      121,
+      222,
+      0.58
+    );
+}
+
+
+/* ============================================================
+ * Mobile bottom navigation safe space
+ * ============================================================ */
+
+.ri-mobile-nav-spacer {
+  display:
+    block;
+
+  height:
+    calc(
+      4.35rem
+      +
+      env(
+        safe-area-inset-bottom
+      )
+    );
+}
+
+
+@media (min-width: 768px) {
+  .ri-mobile-nav-spacer {
+    display:
+      none;
+  }
+}

@@ -33,6 +33,7 @@ from app.agents.support_agent import (
 from app.agents.purchase_agent import (
     purchase_agent,
 )
+
 from app.schemas.chat import (
     CartSummaryBlock,
     BranchMapBlock,
@@ -48,22 +49,32 @@ from app.schemas.chat import (
     StockStatusBlock,
     WishlistBlock,
 )
+
 from app.services import chat_service
+
 from app.services.cart_service import (
     add_cart_item,
 )
+
 from app.services.smart_cart_service import (
     create_customer_smart_cart_rule,
 )
+
 from app.services.wishlist_service import (
     add_wishlist_item,
 )
+
 from app.services.support_service import (
     SupportTicketError,
     create_support_ticket,
 )
+
 from app.services.demand_signal_service import (
     record_demand_signal,
+)
+
+from app.services.preference_capture_service import (
+    capture_explicit_preferences,
 )
 
 
@@ -105,22 +116,18 @@ def resolve_variant_reference(
     Resolve one exact variant.
 
     Priority:
-    1. explicit variant UUID
-    2. ordinal from previous search
-    3. contextual pronoun using the last variant
+    1. Explicit variant UUID
+    2. Ordinal from previous results
+    3. Contextual pronoun using last_variant_id
     """
 
     if parsed.entities.variant_id:
         return (
-            parsed
-            .entities
-            .variant_id
+            parsed.entities.variant_id
         )
 
     ordinal = (
-        parsed
-        .entities
-        .ordinal_reference
+        parsed.entities.ordinal_reference
     )
 
     if ordinal is not None:
@@ -166,12 +173,12 @@ def resolve_variant_references(
     state: dict,
 ) -> list[str]:
     """
-    Resolve one or more independent variant
-    references.
+    Resolve one or more variants.
 
-    Multiple ordinals such as "first and second"
-    are used by the Orchestrator for parallel
-    specialist execution.
+    Supports:
+    "first"
+    "second"
+    "first and second"
     """
 
     if parsed.entities.variant_id:
@@ -180,18 +187,15 @@ def resolve_variant_references(
         ]
 
     ordinals = (
-        parsed
-        .entities
-        .ordinal_references
-        or (
+        parsed.entities.ordinal_references
+        or
+        (
             [
-                parsed
-                .entities
+                parsed.entities
                 .ordinal_reference
             ]
             if (
-                parsed
-                .entities
+                parsed.entities
                 .ordinal_reference
                 is not None
             )
@@ -223,10 +227,7 @@ def resolve_variant_references(
                 variant_ids[index]
             )
 
-            if (
-                variant_id
-                not in resolved
-            ):
+            if variant_id not in resolved:
                 resolved.append(
                     variant_id
                 )
@@ -243,9 +244,222 @@ def resolve_variant_references(
     if not single:
         return []
 
-    return [
-        single
-    ]
+    return [single]
+
+
+def _location_query_requires_inventory(
+    parsed: ParsedCustomerMessage,
+) -> bool:
+    text = (
+        parsed.raw_message.casefold()
+    )
+
+    return bool(
+        parsed.entities.variant_id
+        or
+        parsed.entities.product_name
+        or
+        parsed.entities.category
+        or
+        parsed.entities.color
+        or
+        parsed.entities.size
+        or
+        parsed.entities.material
+        or
+        " stock" in f" {text}"
+        or
+        "available" in text
+        or
+        re.search(
+            r"\b(?:branch|store)\s+has\b",
+            text,
+        )
+    )
+
+
+def resolve_location_variant_ids(
+    parsed: ParsedCustomerMessage,
+    state: dict,
+) -> list[str]:
+    """
+    Resolve variants for branch / stock-location
+    questions.
+
+    Examples:
+
+    Which branch has Embroidered Cotton Kurta?
+
+    Which branch has size M?
+
+    Show me the nearest branch with stock.
+    """
+
+    if parsed.entities.variant_id:
+        return [
+            parsed.entities.variant_id
+        ]
+
+    previous_query = str(
+        state.get(
+            "last_search_query"
+        )
+        or ""
+    ).strip()
+
+    previous_filters = (
+        state.get(
+            "last_search_filters"
+        )
+        if isinstance(
+            state.get(
+                "last_search_filters"
+            ),
+            dict,
+        )
+        else {}
+    )
+
+    product_query = (
+        parsed.entities.product_name
+        or ""
+    ).strip()
+
+    has_current_product_filters = any(
+        value is not None
+        for value in (
+            parsed.entities.category,
+            parsed.entities.color,
+            parsed.entities.size,
+            parsed.entities.material,
+        )
+    )
+
+    # Example:
+    #
+    # Previous:
+    # Show me kurtas
+    #
+    # Current:
+    # Which branch has size M?
+    #
+    # Re-run the latest query with M.
+    if (
+        not product_query
+        and
+        has_current_product_filters
+        and
+        previous_query
+    ):
+        product_query = (
+            previous_query
+        )
+
+    if product_query:
+        category = (
+            parsed.entities.category
+        )
+
+        color = (
+            parsed.entities.color
+        )
+
+        size = (
+            parsed.entities.size
+        )
+
+        material = (
+            parsed.entities.material
+        )
+
+        # If the product itself is contextual,
+        # inherit previous explicit filters.
+        #
+        # If user explicitly names a new product,
+        # don't inherit unrelated old filters.
+        if (
+            not parsed.entities.product_name
+        ):
+            category = (
+                category
+                or
+                previous_filters.get(
+                    "category"
+                )
+            )
+
+            color = (
+                color
+                or
+                previous_filters.get(
+                    "color"
+                )
+            )
+
+            material = (
+                material
+                or
+                previous_filters.get(
+                    "material"
+                )
+            )
+
+        results = (
+            product_agent.search(
+                query=product_query,
+                match_count=30,
+                category=category,
+                color=color,
+                size=size,
+                material=material,
+                min_price=(
+                    previous_filters.get(
+                        "min_price"
+                    )
+                    if not
+                    parsed.entities.product_name
+                    else None
+                ),
+                max_price=(
+                    previous_filters.get(
+                        "max_price"
+                    )
+                    if not
+                    parsed.entities.product_name
+                    else None
+                ),
+            )
+        )
+
+        return list(
+            dict.fromkeys(
+                str(
+                    row.get(
+                        "variant_id"
+                    )
+                )
+                for row in results
+                if row.get(
+                    "variant_id"
+                )
+            )
+        )
+
+    if _location_query_requires_inventory(
+        parsed
+    ):
+        return [
+            str(value)
+            for value in (
+                state.get(
+                    "last_search_variant_ids"
+                )
+                or []
+            )
+            if value
+        ]
+
+    return []
 
 
 def plan_intent(
@@ -253,12 +467,8 @@ def plan_intent(
 ) -> PlannedTask | None:
     if intent == "product_search":
         return PlannedTask(
-            agent_key=(
-                "product_agent"
-            ),
-            task_type=(
-                "product_search"
-            ),
+            agent_key="product_agent",
+            task_type="product_search",
             tool_name=(
                 "product_agent.search"
             ),
@@ -267,25 +477,31 @@ def plan_intent(
     if intent == "store_location_search":
         return PlannedTask(
             agent_key="location_agent",
-            task_type="branch_location_search",
-            tool_name="location_agent.search",
+            task_type=(
+                "branch_location_search"
+            ),
+            tool_name=(
+                "location_agent.search"
+            ),
         )
 
     if intent == "recommendation_search":
         return PlannedTask(
-            agent_key="recommendation_agent",
-            task_type="personalized_recommendations",
-            tool_name="recommendation_agent.recommend",
+            agent_key=(
+                "recommendation_agent"
+            ),
+            task_type=(
+                "personalized_recommendations"
+            ),
+            tool_name=(
+                "recommendation_agent.recommend"
+            ),
         )
 
     if intent == "stock_check":
         return PlannedTask(
-            agent_key=(
-                "inventory_agent"
-            ),
-            task_type=(
-                "stock_check"
-            ),
+            agent_key="inventory_agent",
+            task_type="stock_check",
             tool_name=(
                 "inventory_agent."
                 "get_stock_snapshot_with_branches"
@@ -297,12 +513,9 @@ def plan_intent(
             agent_key=(
                 "orchestrator_agent"
             ),
-            task_type=(
-                "add_to_cart"
-            ),
+            task_type="add_to_cart",
             tool_name=(
-                "cart_service."
-                "add_cart_item"
+                "cart_service.add_cart_item"
             ),
         )
 
@@ -311,9 +524,7 @@ def plan_intent(
             agent_key=(
                 "orchestrator_agent"
             ),
-            task_type=(
-                "add_to_wishlist"
-            ),
+            task_type="add_to_wishlist",
             tool_name=(
                 "wishlist_service."
                 "add_wishlist_item"
@@ -336,12 +547,8 @@ def plan_intent(
 
     if intent == "purchase":
         return PlannedTask(
-            agent_key=(
-                "purchase_agent"
-            ),
-            task_type=(
-                "purchase"
-            ),
+            agent_key="purchase_agent",
+            task_type="purchase",
             tool_name=(
                 "purchase_agent.purchase"
             ),
@@ -354,9 +561,7 @@ def _primary_image_url(
     result: dict,
 ) -> str | None:
     images = (
-        result.get(
-            "images"
-        )
+        result.get("images")
         or []
     )
 
@@ -380,10 +585,8 @@ def _primary_image_url(
     if not primary:
         return None
 
-    return (
-        primary.get(
-            "image_url"
-        )
+    return primary.get(
+        "image_url"
     )
 
 
@@ -414,48 +617,33 @@ def _max_available(
 def build_product_carousel(
     results: list[dict],
 ) -> ProductCarouselBlock:
-    """
-    Validate Product Agent rows before exposing
-    them as chat blocks.
-    """
-
     products: list[
         ProductCard
     ] = []
 
     for result in results:
         product = (
-            result.get(
-                "product"
-            )
+            result.get("product")
             or {}
         )
 
         variant = (
-            result.get(
-                "variant"
-            )
+            result.get("variant")
             or {}
         )
 
         pricing = (
-            result.get(
-                "pricing"
-            )
+            result.get("pricing")
             or {}
         )
 
         color = (
-            variant.get(
-                "color"
-            )
+            variant.get("color")
             or {}
         )
 
         size = (
-            variant.get(
-                "size"
-            )
+            variant.get("size")
             or {}
         )
 
@@ -472,15 +660,11 @@ def build_product_carousel(
         )
 
         name = (
-            product.get(
-                "name"
-            )
+            product.get("name")
         )
 
         sku = (
-            variant.get(
-                "sku"
-            )
+            variant.get("sku")
         )
 
         if not all(
@@ -501,9 +685,7 @@ def build_product_carousel(
 
         if effective_price is None:
             effective_price = (
-                variant.get(
-                    "price"
-                )
+                variant.get("price")
             )
 
         products.append(
@@ -514,16 +696,10 @@ def build_product_carousel(
                 variant_id=str(
                     variant_id
                 ),
-                name=str(
-                    name
-                ),
-                sku=str(
-                    sku
-                ),
+                name=str(name),
+                sku=str(sku),
                 brand=(
-                    product.get(
-                        "brand"
-                    )
+                    product.get("brand")
                 ),
                 material=(
                     product.get(
@@ -531,14 +707,10 @@ def build_product_carousel(
                     )
                 ),
                 color=(
-                    color.get(
-                        "name"
-                    )
+                    color.get("name")
                 ),
                 size=(
-                    size.get(
-                        "name"
-                    )
+                    size.get("name")
                 ),
                 effective_price=(
                     float(
@@ -583,9 +755,7 @@ def build_stock_status_block(
 
     for row in inventory:
         branch = (
-            row.get(
-                "branch"
-            )
+            row.get("branch")
             or {}
         )
 
@@ -593,9 +763,7 @@ def build_stock_status_block(
             continue
 
         actual_branch_name = (
-            branch.get(
-                "name"
-            )
+            branch.get("name")
         )
 
         if (
@@ -615,9 +783,7 @@ def build_stock_status_block(
             continue
 
         status = (
-            row.get(
-                "status"
-            )
+            row.get("status")
         )
 
         if status not in {
@@ -630,22 +796,16 @@ def build_stock_status_block(
         branches.append(
             StockBranchItem(
                 branch_id=str(
-                    row[
-                        "branch_id"
-                    ]
+                    row["branch_id"]
                 ),
                 branch_name=str(
                     actual_branch_name
                 ),
                 city=(
-                    branch.get(
-                        "city"
-                    )
+                    branch.get("city")
                 ),
                 area=(
-                    branch.get(
-                        "area"
-                    )
+                    branch.get("area")
                 ),
                 address=(
                     branch.get(
@@ -663,12 +823,8 @@ def build_stock_status_block(
         )
 
     return StockStatusBlock(
-        variant_id=(
-            variant_id
-        ),
-        branches=(
-            branches
-        ),
+        variant_id=variant_id,
+        branches=branches,
     )
 
 
@@ -731,9 +887,7 @@ class OrchestratorAgent:
             (
                 chat_service
                 .complete_agent_tool_call(
-                    tool_call[
-                        "id"
-                    ],
+                    tool_call["id"],
                     result=result,
                 )
             )
@@ -743,8 +897,7 @@ class OrchestratorAgent:
                 .complete_agent_task(
                     task["id"],
                     output_payload={
-                        "result":
-                            result,
+                        "result": result,
                     },
                 )
             )
@@ -755,11 +908,9 @@ class OrchestratorAgent:
             (
                 chat_service
                 .fail_agent_tool_call(
-                    tool_call[
-                        "id"
-                    ],
-                    error_message=(
-                        str(exc)
+                    tool_call["id"],
+                    error_message=str(
+                        exc
                     ),
                 )
             )
@@ -768,8 +919,8 @@ class OrchestratorAgent:
                 chat_service
                 .fail_agent_task(
                     task["id"],
-                    error_message=(
-                        str(exc)
+                    error_message=str(
+                        exc
                     ),
                 )
             )
@@ -791,12 +942,6 @@ class OrchestratorAgent:
             ]
         ],
     ) -> list[Any]:
-        """
-        Run independent specialist/tool calls
-        concurrently while keeping individual
-        task/tool traces.
-        """
-
         if not jobs:
             return []
 
@@ -811,9 +956,7 @@ class OrchestratorAgent:
                 self._run_traced_tool(
                     run_id=run_id,
                     plan=plan,
-                    arguments=(
-                        arguments
-                    ),
+                    arguments=arguments,
                     call=call,
                 )
             ]
@@ -850,8 +993,7 @@ class OrchestratorAgent:
 
             return [
                 future.result()
-                for future
-                in futures
+                for future in futures
             ]
 
     def _finish_clarification(
@@ -901,9 +1043,7 @@ class OrchestratorAgent:
             chat_service
             .complete_agent_run(
                 run_id,
-                final_response=(
-                    content
-                ),
+                final_response=content,
                 metadata={
                     "intent":
                         parsed.intent,
@@ -918,9 +1058,7 @@ class OrchestratorAgent:
                 conversation_id
             ),
             message_id=str(
-                assistant_message[
-                    "id"
-                ]
+                assistant_message["id"]
             ),
             content=content,
             language=(
@@ -951,8 +1089,7 @@ class OrchestratorAgent:
                 ),
                 language="english",
                 title=(
-                    message
-                    .strip()[:80]
+                    message.strip()[:80]
                     if is_new_conversation
                     else None
                 ),
@@ -1083,9 +1220,7 @@ class OrchestratorAgent:
             .create_agent_run(
                 customer_id,
                 conversation_id,
-                input_text=(
-                    message
-                ),
+                input_text=message,
                 root_agent_key=(
                     self.agent_key
                 ),
@@ -1112,8 +1247,7 @@ class OrchestratorAgent:
                         "understand_customer_message"
                     ),
                     input_payload={
-                        "message":
-                            message,
+                        "message": message,
                     },
                 )
             )
@@ -1121,9 +1255,7 @@ class OrchestratorAgent:
             (
                 chat_service
                 .complete_agent_task(
-                    parse_task[
-                        "id"
-                    ],
+                    parse_task["id"],
                     output_payload=(
                         parsed.model_dump(
                             mode="json"
@@ -1141,12 +1273,10 @@ class OrchestratorAgent:
             )
 
             if (
-                parsed
-                .requires_clarification
+                parsed.requires_clarification
             ):
                 content = (
-                    parsed
-                    .clarification_question
+                    parsed.clarification_question
                     or
                     customer_interaction_agent
                     .compose_generic_clarification(
@@ -1163,9 +1293,7 @@ class OrchestratorAgent:
                         conversation_id=(
                             conversation_id
                         ),
-                        run_id=(
-                            run_id
-                        ),
+                        run_id=run_id,
                         parsed=parsed,
                         content=content,
                     )
@@ -1173,25 +1301,258 @@ class OrchestratorAgent:
 
             if (
                 parsed.intent
-                == "store_location_search"
+                == "preference_update"
             ):
-                plan = plan_intent(parsed.intent)
-                assert plan is not None
-
-                arguments = {
-                    "branch_name": parsed.entities.branch_name,
-                }
-
-                results = self._run_traced_tool(
-                    run_id=run_id,
-                    plan=plan,
-                    arguments=arguments,
-                    call=lambda: location_agent.search(**arguments),
+                stored_preferences = (
+                    capture_explicit_preferences(
+                        customer_id,
+                        conversation_id,
+                        parsed.entities,
+                    )
                 )
 
-                block = BranchMapBlock(
-                    title="Store locations and hours",
-                    branches=results,
+                try:
+                    refreshed_context = (
+                        memory_agent
+                        .load_context(
+                            customer_id
+                        )
+                    )
+
+                    (
+                        chat_service
+                        .merge_conversation_state(
+                            customer_id,
+                            conversation_id,
+                            {
+                                "customer_context_snapshot":
+                                    refreshed_context,
+                                "customer_context_loaded":
+                                    True,
+                                "last_intent":
+                                    parsed.intent,
+                                "language":
+                                    parsed.language,
+                            },
+                        )
+                    )
+
+                except Exception:
+                    logger.exception(
+                        "Preference was stored "
+                        "but refreshed memory context "
+                        "could not be loaded for "
+                        "conversation %s",
+                        conversation_id,
+                    )
+
+                    (
+                        chat_service
+                        .merge_conversation_state(
+                            customer_id,
+                            conversation_id,
+                            {
+                                "last_intent":
+                                    parsed.intent,
+                                "language":
+                                    parsed.language,
+                            },
+                        )
+                    )
+
+                if stored_preferences:
+                    labels = ", ".join(
+                        (
+                            f"{item['label']} "
+                            f"{item['value']}"
+                        )
+                        for item
+                        in stored_preferences
+                    )
+
+                    content = (
+                        "Got it — I'll keep your "
+                        f"{labels} preference "
+                        "in mind for future "
+                        "recommendations."
+                    )
+
+                else:
+                    content = (
+                        "I understood that as a "
+                        "preference, but I couldn't "
+                        "identify a material, size, "
+                        "color, or product category. "
+                        "For example, say "
+                        "'I prefer cotton' or "
+                        "'My size is M'."
+                    )
+
+                blocks = []
+
+            elif (
+                parsed.intent
+                == "store_location_search"
+            ):
+                plan = (
+                    plan_intent(
+                        parsed.intent
+                    )
+                )
+
+                assert plan is not None
+
+                variant_ids = (
+                    resolve_location_variant_ids(
+                        parsed,
+                        state,
+                    )
+                )
+
+                requires_inventory = (
+                    _location_query_requires_inventory(
+                        parsed
+                    )
+                )
+
+                if (
+                    requires_inventory
+                    and
+                    not variant_ids
+                ):
+                    return (
+                        self
+                        ._finish_clarification(
+                            customer_id=(
+                                customer_id
+                            ),
+                            conversation_id=(
+                                conversation_id
+                            ),
+                            run_id=run_id,
+                            parsed=parsed,
+                            content=(
+                                "Which product do "
+                                "you want me to locate? "
+                                "You can name the product, "
+                                "mention a size from the "
+                                "previous results, or "
+                                "select one of the "
+                                "previous items."
+                            ),
+                        )
+                    )
+
+                if variant_ids:
+                    jobs: list[
+                        tuple[
+                            PlannedTask,
+                            dict,
+                            Callable[
+                                [],
+                                Any,
+                            ],
+                        ]
+                    ] = []
+
+                    for variant_id in (
+                        variant_ids
+                    ):
+                        arguments = {
+                            "branch_name":
+                                parsed
+                                .entities
+                                .branch_name,
+                            "variant_id":
+                                variant_id,
+                        }
+
+                        jobs.append(
+                            (
+                                plan,
+                                arguments,
+                                (
+                                    lambda
+                                    current_arguments=arguments:
+                                        location_agent
+                                        .search(
+                                            **current_arguments
+                                        )
+                                ),
+                            )
+                        )
+
+                    location_results = (
+                        self
+                        ._run_parallel_traced_tools(
+                            run_id=run_id,
+                            jobs=jobs,
+                        )
+                    )
+
+                    merged_by_branch: dict[
+                        str,
+                        dict,
+                    ] = {}
+
+                    for result_set in (
+                        location_results
+                    ):
+                        for branch in (
+                            result_set
+                        ):
+                            branch_id = str(
+                                branch.get(
+                                    "branch_id"
+                                )
+                                or ""
+                            )
+
+                            if branch_id:
+                                merged_by_branch[
+                                    branch_id
+                                ] = branch
+
+                    results = list(
+                        merged_by_branch
+                        .values()
+                    )
+
+                else:
+                    arguments = {
+                        "branch_name":
+                            parsed
+                            .entities
+                            .branch_name,
+                    }
+
+                    results = (
+                        self
+                        ._run_traced_tool(
+                            run_id=run_id,
+                            plan=plan,
+                            arguments=(
+                                arguments
+                            ),
+                            call=lambda: (
+                                location_agent
+                                .search(
+                                    **arguments
+                                )
+                            ),
+                        )
+                    )
+
+                block = (
+                    BranchMapBlock(
+                        title=(
+                            "Branches with stock"
+                            if variant_ids
+                            else
+                            "Store locations and hours"
+                        ),
+                        branches=results,
+                    )
                 )
 
                 (
@@ -1200,21 +1561,46 @@ class OrchestratorAgent:
                         customer_id,
                         conversation_id,
                         {
-                            "last_intent": parsed.intent,
-                            "language": parsed.language,
+                            "last_intent":
+                                parsed.intent,
+                            "language":
+                                parsed.language,
                         },
                     )
                 )
 
-                if results:
+                if (
+                    results
+                    and
+                    variant_ids
+                ):
                     content = (
-                        "Here are the matching store locations, "
-                        "addresses, and opening hours."
+                        "Here are the active branches "
+                        "with verified stock for the "
+                        "matching item."
                     )
+
+                elif results:
+                    content = (
+                        "Here are the matching store "
+                        "locations, addresses, and "
+                        "opening hours."
+                    )
+
+                elif variant_ids:
+                    content = (
+                        "I found the matching item, "
+                        "but it is not currently "
+                        "available at any active "
+                        "branch."
+                    )
+
                 else:
                     content = (
-                        "I couldn't find an active store matching "
-                        "that location. Try specifying a branch or area."
+                        "I couldn't find an active "
+                        "store matching that location. "
+                        "Try specifying a branch "
+                        "or area."
                     )
 
                 blocks = [block]
@@ -1223,60 +1609,136 @@ class OrchestratorAgent:
                 parsed.intent
                 == "recommendation_search"
             ):
-                plan = plan_intent(parsed.intent)
+                plan = (
+                    plan_intent(
+                        parsed.intent
+                    )
+                )
+
                 assert plan is not None
 
                 arguments = {
-                    "customer_id": customer_id,
-                    "query": parsed.raw_message,
-                    "category": parsed.entities.category,
-                    "color": parsed.entities.color,
-                    "size": parsed.entities.size,
-                    "material": parsed.entities.material,
-                    "min_price": parsed.entities.min_price,
-                    "max_price": parsed.entities.max_price,
-                    "match_count": 10,
+                    "customer_id":
+                        customer_id,
+                    "query":
+                        parsed.raw_message,
+                    "category":
+                        parsed.entities.category,
+                    "color":
+                        parsed.entities.color,
+                    "size":
+                        parsed.entities.size,
+                    "material":
+                        parsed.entities.material,
+                    "min_price":
+                        parsed.entities.min_price,
+                    "max_price":
+                        parsed.entities.max_price,
+                    "match_count":
+                        10,
                 }
 
-                results = self._run_traced_tool(
-                    run_id=run_id,
-                    plan=plan,
-                    arguments=arguments,
-                    call=lambda: recommendation_agent.recommend(
-                        **arguments
-                    ),
+                results = (
+                    self
+                    ._run_traced_tool(
+                        run_id=run_id,
+                        plan=plan,
+                        arguments=arguments,
+                        call=lambda: (
+                            recommendation_agent
+                            .recommend(
+                                **arguments
+                            )
+                        ),
+                    )
                 )
 
-                product_block = build_product_carousel(results)
-                block = RecommendationBlock(
-                    title="Recommended for you",
-                    products=product_block.products,
+                product_block = (
+                    build_product_carousel(
+                        results
+                    )
+                )
+
+                block = (
+                    RecommendationBlock(
+                        title=(
+                            "Recommended for you"
+                        ),
+                        products=(
+                            product_block.products
+                        ),
+                    )
                 )
 
                 variant_ids = [
                     product.variant_id
-                    for product in block.products
+                    for product
+                    in block.products
                 ]
 
                 updates = {
-                    "last_intent": parsed.intent,
-                    "language": parsed.language,
-                    "last_search_variant_ids": variant_ids,
+                    "last_intent":
+                        parsed.intent,
+                    "language":
+                        parsed.language,
+                    "last_search_variant_ids":
+                        variant_ids,
+                    "last_search_query":
+                        parsed.raw_message,
+                    "last_search_filters": {
+                        "category":
+                            parsed
+                            .entities
+                            .category,
+                        "color":
+                            parsed
+                            .entities
+                            .color,
+                        "size":
+                            parsed
+                            .entities
+                            .size,
+                        "material":
+                            parsed
+                            .entities
+                            .material,
+                        "min_price":
+                            parsed
+                            .entities
+                            .min_price,
+                        "max_price":
+                            parsed
+                            .entities
+                            .max_price,
+                    },
                 }
 
-                if variant_ids:
-                    updates["last_variant_id"] = variant_ids[0]
+                # IMPORTANT:
+                # Empty search means old exact
+                # variant reference must be cleared.
+                updates[
+                    "last_variant_id"
+                ] = (
+                    variant_ids[0]
+                    if variant_ids
+                    else None
+                )
 
-                chat_service.merge_conversation_state(
-                    customer_id,
-                    conversation_id,
-                    updates,
+                (
+                    chat_service
+                    .merge_conversation_state(
+                        customer_id,
+                        conversation_id,
+                        updates,
+                    )
                 )
 
                 content = (
-                    "Here are some product recommendations "
-                    "that match your request."
+                    "Here are some product "
+                    "recommendations that "
+                    "match your request."
                 )
+
                 blocks = [block]
 
             elif (
@@ -1289,10 +1751,15 @@ class OrchestratorAgent:
                     )
                 )
 
-                assert (
-                    plan is not None
-                )
+                assert plan is not None
 
+                # IMPORTANT:
+                #
+                # Only CURRENT-MESSAGE filters
+                # are supplied here.
+                #
+                # Stored preferences are not
+                # injected into ordinary search.
                 arguments = {
                     "query":
                         parsed.raw_message,
@@ -1319,13 +1786,9 @@ class OrchestratorAgent:
                 results = (
                     self
                     ._run_traced_tool(
-                        run_id=(
-                            run_id
-                        ),
+                        run_id=run_id,
                         plan=plan,
-                        arguments=(
-                            arguments
-                        ),
+                        arguments=arguments,
                         call=lambda: (
                             product_agent
                             .search(
@@ -1354,12 +1817,57 @@ class OrchestratorAgent:
                         parsed.language,
                     "last_search_variant_ids":
                         variant_ids,
+                    "last_search_query":
+                        parsed.raw_message,
+                    "last_search_filters": {
+                        "category":
+                            parsed
+                            .entities
+                            .category,
+                        "color":
+                            parsed
+                            .entities
+                            .color,
+                        "size":
+                            parsed
+                            .entities
+                            .size,
+                        "material":
+                            parsed
+                            .entities
+                            .material,
+                        "min_price":
+                            parsed
+                            .entities
+                            .min_price,
+                        "max_price":
+                            parsed
+                            .entities
+                            .max_price,
+                    },
                 }
 
-                if variant_ids:
-                    updates[
-                        "last_variant_id"
-                    ] = variant_ids[0]
+                # IMPORTANT:
+                #
+                # If this search returns zero
+                # products, remove the previous
+                # exact item reference.
+                #
+                # This stops:
+                #
+                # "Show me impossible thing"
+                # -> zero products
+                # "Is it in stock?"
+                #
+                # from accidentally checking an
+                # item from an older search.
+                updates[
+                    "last_variant_id"
+                ] = (
+                    variant_ids[0]
+                    if variant_ids
+                    else None
+                )
 
                 (
                     chat_service
@@ -1377,19 +1885,11 @@ class OrchestratorAgent:
                         len(
                             block.products
                         ),
-                        remembered_size=(
-                            parsed
-                            .context_used
-                            .get(
-                                "usual_size"
-                            )
-                        ),
+                        remembered_size=None,
                     )
                 )
 
-                blocks = [
-                    block
-                ]
+                blocks = [block]
 
             elif (
                 parsed.intent
@@ -1412,9 +1912,7 @@ class OrchestratorAgent:
                             conversation_id=(
                                 conversation_id
                             ),
-                            run_id=(
-                                run_id
-                            ),
+                            run_id=run_id,
                             parsed=parsed,
                             content=(
                                 customer_interaction_agent
@@ -1431,9 +1929,7 @@ class OrchestratorAgent:
                     )
                 )
 
-                assert (
-                    plan is not None
-                )
+                assert plan is not None
 
                 jobs: list[
                     tuple[
@@ -1446,7 +1942,9 @@ class OrchestratorAgent:
                     ]
                 ] = []
 
-                for variant_id in variant_ids:
+                for variant_id in (
+                    variant_ids
+                ):
                     arguments = {
                         "variant_id":
                             variant_id,
@@ -1457,7 +1955,8 @@ class OrchestratorAgent:
                             plan,
                             arguments,
                             (
-                                lambda current_variant_id=variant_id:
+                                lambda
+                                current_variant_id=variant_id:
                                     inventory_agent
                                     .get_stock_snapshot_with_branches(
                                         current_variant_id
@@ -1469,20 +1968,19 @@ class OrchestratorAgent:
                 inventory_results = (
                     self
                     ._run_parallel_traced_tools(
-                        run_id=(
-                            run_id
-                        ),
+                        run_id=run_id,
                         jobs=jobs,
                     )
                 )
 
                 requested_branch = (
-                    parsed
-                    .entities
-                    .branch_name
+                    parsed.entities.branch_name
                 )
 
-                for variant_id, inventory in zip(
+                for (
+                    variant_id,
+                    inventory,
+                ) in zip(
                     variant_ids,
                     inventory_results,
                     strict=True,
@@ -1491,42 +1989,95 @@ class OrchestratorAgent:
                         continue
 
                     relevant_rows = []
+
                     for row in inventory:
-                        branch = row.get("branch") or {}
+                        branch = (
+                            row.get("branch")
+                            or {}
+                        )
+
                         if not branch:
                             continue
 
                         if (
                             requested_branch
-                            and str(branch.get("name") or "").strip().lower()
-                            != requested_branch.strip().lower()
+                            and
+                            str(
+                                branch.get(
+                                    "name"
+                                )
+                                or ""
+                            )
+                            .strip()
+                            .lower()
+                            !=
+                            requested_branch
+                            .strip()
+                            .lower()
                         ):
                             continue
 
-                        relevant_rows.append(row)
+                        relevant_rows.append(
+                            row
+                        )
 
                     if (
                         relevant_rows
-                        and all(
-                            int(row.get("available_quantity") or 0) <= 0
-                            for row in relevant_rows
+                        and
+                        all(
+                            int(
+                                row.get(
+                                    "available_quantity"
+                                )
+                                or 0
+                            )
+                            <= 0
+                            for row
+                            in relevant_rows
                         )
                     ):
-                        record_demand_signal(
-                            signal_type="insufficient_stock",
-                            customer_id=customer_id,
-                            variant_id=variant_id,
-                            branch_id=(
-                                str(relevant_rows[0].get("branch_id"))
-                                if requested_branch
-                                and relevant_rows[0].get("branch_id") is not None
-                                else None
-                            ),
-                            metadata={
-                                "requested_branch": requested_branch,
-                                "checked_branch_count": len(relevant_rows),
-                                "source": "stock_check",
-                            },
+                        (
+                            record_demand_signal(
+                                signal_type=(
+                                    "insufficient_stock"
+                                ),
+                                customer_id=(
+                                    customer_id
+                                ),
+                                variant_id=(
+                                    variant_id
+                                ),
+                                branch_id=(
+                                    str(
+                                        relevant_rows[
+                                            0
+                                        ].get(
+                                            "branch_id"
+                                        )
+                                    )
+                                    if (
+                                        requested_branch
+                                        and
+                                        relevant_rows[
+                                            0
+                                        ].get(
+                                            "branch_id"
+                                        )
+                                        is not None
+                                    )
+                                    else None
+                                ),
+                                metadata={
+                                    "requested_branch":
+                                        requested_branch,
+                                    "checked_branch_count":
+                                        len(
+                                            relevant_rows
+                                        ),
+                                    "source":
+                                        "stock_check",
+                                },
+                            )
                         )
 
                 stock_blocks = [
@@ -1565,10 +2116,9 @@ class OrchestratorAgent:
                     )
                 )
 
-                if (
-                    len(stock_blocks)
-                    == 1
-                ):
+                if len(
+                    stock_blocks
+                ) == 1:
                     content = (
                         customer_interaction_agent
                         .compose_stock_response(
@@ -1581,6 +2131,7 @@ class OrchestratorAgent:
                             ),
                         )
                     )
+
                 else:
                     content = (
                         customer_interaction_agent
@@ -1617,9 +2168,7 @@ class OrchestratorAgent:
                             conversation_id=(
                                 conversation_id
                             ),
-                            run_id=(
-                                run_id
-                            ),
+                            run_id=run_id,
                             parsed=parsed,
                             content=(
                                 customer_interaction_agent
@@ -1631,9 +2180,7 @@ class OrchestratorAgent:
                     )
 
                 quantity = (
-                    parsed
-                    .entities
-                    .quantity
+                    parsed.entities.quantity
                     or 1
                 )
 
@@ -1643,9 +2190,7 @@ class OrchestratorAgent:
                     )
                 )
 
-                assert (
-                    plan is not None
-                )
+                assert plan is not None
 
                 arguments = {
                     "variant_id":
@@ -1657,13 +2202,9 @@ class OrchestratorAgent:
                 cart = (
                     self
                     ._run_traced_tool(
-                        run_id=(
-                            run_id
-                        ),
+                        run_id=run_id,
                         plan=plan,
-                        arguments=(
-                            arguments
-                        ),
+                        arguments=arguments,
                         call=lambda: (
                             add_cart_item(
                                 customer_id=(
@@ -1710,9 +2251,7 @@ class OrchestratorAgent:
                     )
                 )
 
-                blocks = [
-                    block
-                ]
+                blocks = [block]
 
             elif (
                 parsed.intent
@@ -1735,9 +2274,7 @@ class OrchestratorAgent:
                             conversation_id=(
                                 conversation_id
                             ),
-                            run_id=(
-                                run_id
-                            ),
+                            run_id=run_id,
                             parsed=parsed,
                             content=(
                                 customer_interaction_agent
@@ -1754,9 +2291,7 @@ class OrchestratorAgent:
                     )
                 )
 
-                assert (
-                    plan is not None
-                )
+                assert plan is not None
 
                 arguments = {
                     "variant_id":
@@ -1766,13 +2301,9 @@ class OrchestratorAgent:
                 wishlist = (
                     self
                     ._run_traced_tool(
-                        run_id=(
-                            run_id
-                        ),
+                        run_id=run_id,
                         plan=plan,
-                        arguments=(
-                            arguments
-                        ),
+                        arguments=arguments,
                         call=lambda: (
                             add_wishlist_item(
                                 customer_id=(
@@ -1815,9 +2346,7 @@ class OrchestratorAgent:
                     )
                 )
 
-                blocks = [
-                    block
-                ]
+                blocks = [block]
 
             elif (
                 parsed.intent
@@ -1840,9 +2369,7 @@ class OrchestratorAgent:
                             conversation_id=(
                                 conversation_id
                             ),
-                            run_id=(
-                                run_id
-                            ),
+                            run_id=run_id,
                             parsed=parsed,
                             content=(
                                 customer_interaction_agent
@@ -1854,13 +2381,10 @@ class OrchestratorAgent:
                     )
 
                 if (
-                    parsed
-                    .entities
-                    .target_price
+                    parsed.entities.target_price
                     is None
                     and
-                    parsed
-                    .entities
+                    parsed.entities
                     .min_discount_percentage
                     is None
                 ):
@@ -1873,9 +2397,7 @@ class OrchestratorAgent:
                             conversation_id=(
                                 conversation_id
                             ),
-                            run_id=(
-                                run_id
-                            ),
+                            run_id=run_id,
                             parsed=parsed,
                             content=(
                                 customer_interaction_agent
@@ -1887,8 +2409,7 @@ class OrchestratorAgent:
                     )
 
                 authorization_mode = (
-                    parsed
-                    .entities
+                    parsed.entities
                     .authorization_mode
                 )
 
@@ -1905,9 +2426,7 @@ class OrchestratorAgent:
                             conversation_id=(
                                 conversation_id
                             ),
-                            run_id=(
-                                run_id
-                            ),
+                            run_id=run_id,
                             parsed=parsed,
                             content=(
                                 customer_interaction_agent
@@ -1919,9 +2438,7 @@ class OrchestratorAgent:
                     )
 
                 quantity = (
-                    parsed
-                    .entities
-                    .quantity
+                    parsed.entities.quantity
                     or 1
                 )
 
@@ -1931,9 +2448,7 @@ class OrchestratorAgent:
                     )
                 )
 
-                assert (
-                    plan is not None
-                )
+                assert plan is not None
 
                 arguments = {
                     "variant_id":
@@ -1941,12 +2456,10 @@ class OrchestratorAgent:
                     "quantity":
                         quantity,
                     "target_price":
-                        parsed
-                        .entities
+                        parsed.entities
                         .target_price,
                     "min_discount_percentage":
-                        parsed
-                        .entities
+                        parsed.entities
                         .min_discount_percentage,
                     "authorization_mode":
                         authorization_mode,
@@ -1957,13 +2470,9 @@ class OrchestratorAgent:
                 rule = (
                     self
                     ._run_traced_tool(
-                        run_id=(
-                            run_id
-                        ),
+                        run_id=run_id,
                         plan=plan,
-                        arguments=(
-                            arguments
-                        ),
+                        arguments=arguments,
                         call=lambda: (
                             create_customer_smart_cart_rule(
                                 customer_id=(
@@ -1976,21 +2485,17 @@ class OrchestratorAgent:
                                     quantity
                                 ),
                                 target_price=(
-                                    parsed
-                                    .entities
+                                    parsed.entities
                                     .target_price
                                 ),
                                 min_discount_percentage=(
-                                    parsed
-                                    .entities
+                                    parsed.entities
                                     .min_discount_percentage
                                 ),
                                 authorization_mode=(
                                     authorization_mode
                                 ),
-                                branch_id=(
-                                    None
-                                ),
+                                branch_id=None,
                             )
                         ),
                     )
@@ -2028,9 +2533,7 @@ class OrchestratorAgent:
                     )
                 )
 
-                blocks = [
-                    block
-                ]
+                blocks = [block]
 
             elif (
                 parsed.intent
@@ -2053,9 +2556,7 @@ class OrchestratorAgent:
                             conversation_id=(
                                 conversation_id
                             ),
-                            run_id=(
-                                run_id
-                            ),
+                            run_id=run_id,
                             parsed=parsed,
                             content=(
                                 customer_interaction_agent
@@ -2067,9 +2568,7 @@ class OrchestratorAgent:
                     )
 
                 quantity = (
-                    parsed
-                    .entities
-                    .quantity
+                    parsed.entities.quantity
                     or 1
                 )
 
@@ -2103,9 +2602,7 @@ class OrchestratorAgent:
                     )
                 )
 
-                assert (
-                    plan is not None
-                )
+                assert plan is not None
 
                 arguments = {
                     "customer_id":
@@ -2125,16 +2622,11 @@ class OrchestratorAgent:
                 result = (
                     self
                     ._run_traced_tool(
-                        run_id=(
-                            run_id
-                        ),
+                        run_id=run_id,
                         plan=plan,
-                        arguments=(
-                            arguments
-                        ),
+                        arguments=arguments,
                         call=lambda: (
-                            purchase_agent
-                            .purchase(
+                            purchase_agent.purchase(
                                 customer_id=(
                                     customer_id
                                 ),
@@ -2147,9 +2639,7 @@ class OrchestratorAgent:
                                 idempotency_key=(
                                     idempotency_key
                                 ),
-                                branch_id=(
-                                    None
-                                ),
+                                branch_id=None,
                                 reservation_id=(
                                     reservation_id
                                 ),
@@ -2159,9 +2649,7 @@ class OrchestratorAgent:
                 )
 
                 success = (
-                    result.get(
-                        "success"
-                    )
+                    result.get("success")
                     is True
                 )
 
@@ -2195,9 +2683,7 @@ class OrchestratorAgent:
                         )
                     )
 
-                    blocks = [
-                        block
-                    ]
+                    blocks = [block]
 
                     state_updates = {
                         "last_intent":
@@ -2205,15 +2691,15 @@ class OrchestratorAgent:
                         "last_variant_id":
                             variant_id,
                         "last_order_id":
-                            str(
-                                order_id
-                            ),
+                            str(order_id),
                         "language":
                             parsed.language,
                     }
 
-                    if result.get(
-                        "purchase_attempt_id"
+                    if (
+                        result.get(
+                            "purchase_attempt_id"
+                        )
                     ):
                         state_updates[
                             "last_purchase_attempt_id"
@@ -2256,111 +2742,209 @@ class OrchestratorAgent:
                     )
                 )
 
-            elif parsed.intent == "support_request":
+            elif (
+                parsed.intent
+                == "support_request"
+            ):
                 recent_messages = []
 
                 try:
                     recent_messages = (
-                        chat_service.list_recent_messages(
+                        chat_service
+                        .list_recent_messages(
                             customer_id,
                             conversation_id,
                             limit=12,
                         )
                     )
+
                 except Exception:
                     logger.exception(
-                        "Could not load recent messages for "
-                        "support handoff in conversation %s",
+                        "Could not load recent "
+                        "messages for support "
+                        "handoff in conversation %s",
                         conversation_id,
                     )
 
-                # The current message is passed separately.
                 recent_messages = [
                     item
-                    for item in recent_messages
+                    for item
+                    in recent_messages
                     if not (
-                        str(item.get("role", "")).casefold()
-                        in {"user", "customer"}
-                        and str(item.get("content", "")).strip()
+                        str(
+                            item.get(
+                                "role",
+                                "",
+                            )
+                        ).casefold()
+                        in {
+                            "user",
+                            "customer",
+                        }
+                        and
+                        str(
+                            item.get(
+                                "content",
+                                "",
+                            )
+                        ).strip()
                         == message.strip()
                     )
                 ]
 
-                escalation = support_agent.prepare_escalation(
-                    message=message,
-                    language=parsed.language,
-                    customer_context=customer_context,
-                    recent_messages=recent_messages,
+                escalation = (
+                    support_agent
+                    .prepare_escalation(
+                        message=message,
+                        language=(
+                            parsed.language
+                        ),
+                        customer_context=(
+                            customer_context
+                        ),
+                        recent_messages=(
+                            recent_messages
+                        ),
+                    )
                 )
 
-                subject = escalation["subject"]
+                subject = (
+                    escalation["subject"]
+                )
 
                 try:
-                    ticket = create_support_ticket(
-                        customer_id=customer_id,
-                        conversation_id=conversation_id,
-                        subject=subject,
-                        description=escalation["description"],
-                        sentiment=escalation["sentiment"],
-                        priority=escalation["priority"],
-                        handoff_summary=escalation["handoff_summary"],
-                        agent_context=escalation["agent_context"],
+                    ticket = (
+                        create_support_ticket(
+                            customer_id=(
+                                customer_id
+                            ),
+                            conversation_id=(
+                                conversation_id
+                            ),
+                            subject=subject,
+                            description=(
+                                escalation[
+                                    "description"
+                                ]
+                            ),
+                            sentiment=(
+                                escalation[
+                                    "sentiment"
+                                ]
+                            ),
+                            priority=(
+                                escalation[
+                                    "priority"
+                                ]
+                            ),
+                            handoff_summary=(
+                                escalation[
+                                    "handoff_summary"
+                                ]
+                            ),
+                            agent_context=(
+                                escalation[
+                                    "agent_context"
+                                ]
+                            ),
+                        )
                     )
 
-                    ticket_id = str(ticket["ticket_id"])
-                    ticket_status = ticket.get("status", "open")
-                    ticket_subject = ticket.get("subject", subject)
+                    ticket_id = str(
+                        ticket["ticket_id"]
+                    )
 
-                    if parsed.language == "roman_urdu":
+                    ticket_status = (
+                        ticket.get(
+                            "status",
+                            "open",
+                        )
+                    )
+
+                    ticket_subject = (
+                        ticket.get(
+                            "subject",
+                            subject,
+                        )
+                    )
+
+                    if (
+                        parsed.language
+                        == "roman_urdu"
+                    ):
                         content = (
-                            "Aapki support request team ko bhej di gayi hai. "
+                            "Aapki support request "
+                            "team ko bhej di gayi hai. "
                             f"Ticket ID: {ticket_id}"
                         )
+
                     else:
                         content = (
                             escalation["response"]
-                            + f" Ticket ID: {ticket_id}."
+                            +
+                            f" Ticket ID: {ticket_id}."
                         )
 
                     blocks = [
                         SupportEscalationBlock(
-                            ticket_id=ticket_id,
-                            status=ticket_status,
-                            subject=ticket_subject,
+                            ticket_id=(
+                                ticket_id
+                            ),
+                            status=(
+                                ticket_status
+                            ),
+                            subject=(
+                                ticket_subject
+                            ),
                             message=content,
                         )
                     ]
 
                     state_updates = {
-                        "last_intent": parsed.intent,
-                        "last_support_ticket_id": ticket_id,
-                        "language": parsed.language,
+                        "last_intent":
+                            parsed.intent,
+                        "last_support_ticket_id":
+                            ticket_id,
+                        "language":
+                            parsed.language,
                     }
 
                 except SupportTicketError:
-                    if parsed.language == "roman_urdu":
+                    if (
+                        parsed.language
+                        == "roman_urdu"
+                    ):
                         content = (
-                            "Maazrat, aapki support request "
-                            "abhi create nahi ho saki. "
+                            "Maazrat, aapki "
+                            "support request abhi "
+                            "create nahi ho saki. "
                             "Please dobara try karein."
                         )
+
                     else:
                         content = (
-                            "Sorry, I couldn't create your "
-                            "support request right now. "
+                            "Sorry, I couldn't "
+                            "create your support "
+                            "request right now. "
                             "Please try again."
                         )
 
                     blocks = []
+
                     state_updates = {
-                        "last_intent": parsed.intent,
-                        "language": parsed.language,
+                        "last_intent":
+                            parsed.intent,
+                        "language":
+                            parsed.language,
                     }
 
-                chat_service.merge_conversation_state(
-                    customer_id,
-                    conversation_id,
-                    state_updates,
+                (
+                    chat_service
+                    .merge_conversation_state(
+                        customer_id,
+                        conversation_id,
+                        state_updates,
+                    )
                 )
 
             else:
@@ -2393,9 +2977,7 @@ class OrchestratorAgent:
                     customer_id,
                     conversation_id,
                     role="assistant",
-                    content=(
-                        content
-                    ),
+                    content=content,
                     agent_key=(
                         self.agent_key
                     ),
@@ -2403,8 +2985,7 @@ class OrchestratorAgent:
                         "intent":
                             parsed.intent,
                         "blocks": [
-                            block
-                            .model_dump(
+                            block.model_dump(
                                 mode="json"
                             )
                             for block
@@ -2440,19 +3021,13 @@ class OrchestratorAgent:
                     conversation_id
                 ),
                 message_id=str(
-                    assistant_message[
-                        "id"
-                    ]
+                    assistant_message["id"]
                 ),
-                content=(
-                    content
-                ),
+                content=content,
                 language=(
                     parsed.language
                 ),
-                blocks=(
-                    blocks
-                ),
+                blocks=blocks,
             )
 
         except Exception as exc:
@@ -2461,11 +3036,12 @@ class OrchestratorAgent:
                     chat_service
                     .fail_agent_run(
                         run_id,
-                        error_message=(
-                            str(exc)
+                        error_message=str(
+                            exc
                         ),
                     )
                 )
+
             finally:
                 raise
 

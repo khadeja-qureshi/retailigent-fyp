@@ -4,10 +4,12 @@ import Link from "next/link";
 
 import {
   usePathname,
+  useRouter,
 } from "next/navigation";
 
 import {
   useEffect,
+  useRef,
   useState,
 } from "react";
 
@@ -20,7 +22,20 @@ import {
 } from "@/lib/supabase/client";
 
 
-const DESKTOP_LINKS = [
+const API_URL =
+  process.env.NEXT_PUBLIC_API_URL
+  ??
+  "http://127.0.0.1:8000";
+
+
+type UserRole =
+  | "customer"
+  | "staff"
+  | "manager"
+  | "admin";
+
+
+const CUSTOMER_LINKS = [
   {
     href: "/",
     label: "Home",
@@ -53,48 +68,65 @@ const DESKTOP_LINKS = [
     href: "/alerts",
     label: "Alerts",
   },
+];
+
+
+const ADMIN_LINKS = [
   {
-    href: "/profile",
-    label: "Profile",
+    href: "/admin",
+    label: "Dashboard",
+    exact: true,
+  },
+  {
+    href: "/admin/tickets",
+    label: "Tickets",
+  },
+  {
+    href: "/admin/feedback",
+    label: "Feedback",
+  },
+  {
+    href: "/admin/analytics",
+    label: "Analytics",
+  },
+  {
+    href: "/admin/ask",
+    label: "Assistant",
+  },
+  {
+    href: "/admin/audit-logs",
+    label: "Audit Logs",
   },
 ];
 
 
-const MOBILE_MORE_LINKS = [
-  {
-    href: "/wishlist",
-    label: "Wishlist",
-    description:
-      "Your saved products",
-  },
-  {
-    href: "/reservations",
-    label: "Reservations",
-    description:
-      "Branch inventory holds",
-  },
-  {
-    href: "/smart-cart",
-    label: "Smart Cart",
-    description:
-      "Automated shopping rules",
-  },
-  {
-    href: "/alerts",
-    label: "Product Alerts",
-    description:
-      "Price and stock monitoring",
-  },
-];
+function isPrivilegedRole(
+  role: UserRole | null
+) {
+  return (
+    role === "staff"
+    ||
+    role === "manager"
+    ||
+    role === "admin"
+  );
+}
 
 
 function isActivePath(
   pathname: string,
-  href: string
+  href: string,
+  exact = false
 ) {
+  if (exact) {
+    return pathname === href;
+  }
+
+
   if (href === "/") {
     return pathname === "/";
   }
+
 
   return (
     pathname === href
@@ -106,41 +138,26 @@ function isActivePath(
 }
 
 
-function MenuIcon({
-  open,
-}: {
-  open: boolean;
-}) {
-  if (open) {
-    return (
-      <svg
-        viewBox="0 0 24 24"
-        aria-hidden="true"
-        className="h-5 w-5"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2"
-      >
-        <path
-          strokeLinecap="round"
-          d="M6 6l12 12M18 6L6 18"
-        />
-      </svg>
-    );
-  }
-
+function UserIcon() {
   return (
     <svg
       viewBox="0 0 24 24"
       aria-hidden="true"
-      className="h-5 w-5"
+      className="h-4 w-4"
       fill="none"
       stroke="currentColor"
-      strokeWidth="2"
+      strokeWidth="1.8"
     >
+      <circle
+        cx="12"
+        cy="8"
+        r="3.5"
+      />
+
       <path
         strokeLinecap="round"
-        d="M4 7h16M4 12h16M4 17h16"
+        strokeLinejoin="round"
+        d="M5 20c.7-4 3.1-6 7-6s6.3 2 7 6"
       />
     </svg>
   );
@@ -152,7 +169,7 @@ function BellIcon() {
     <svg
       viewBox="0 0 24 24"
       aria-hidden="true"
-      className="h-5 w-5"
+      className="h-4 w-4"
       fill="none"
       stroke="currentColor"
       strokeWidth="1.8"
@@ -173,15 +190,101 @@ function BellIcon() {
 }
 
 
+function MenuIcon({
+  open,
+}: {
+  open: boolean;
+}) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+      className="h-5 w-5"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+    >
+      {
+        open
+          ? (
+            <path
+              strokeLinecap="round"
+              d="M6 6l12 12M18 6L6 18"
+            />
+          )
+          : (
+            <path
+              strokeLinecap="round"
+              d="M4 7h16M4 12h16M4 17h16"
+            />
+          )
+      }
+    </svg>
+  );
+}
+
+
+async function getRole(
+  accessToken: string
+): Promise<UserRole> {
+  const response =
+    await fetch(
+      `${API_URL}/api/v1/me/role`,
+      {
+        headers: {
+          Authorization:
+            `Bearer ${accessToken}`,
+        },
+
+        cache:
+          "no-store",
+      }
+    );
+
+
+  if (!response.ok) {
+    throw new Error(
+      "Unable to load account role."
+    );
+  }
+
+
+  const payload =
+    await response.json();
+
+
+  const role =
+    payload?.role;
+
+
+  if (
+    role === "staff"
+    ||
+    role === "manager"
+    ||
+    role === "admin"
+  ) {
+    return role;
+  }
+
+
+  return "customer";
+}
+
+
 export default function NavBar() {
   const pathname =
     usePathname();
 
-  const [
-    unread,
-    setUnread,
-  ] =
-    useState(0);
+  const router =
+    useRouter();
+
+
+  const accountRef =
+    useRef<HTMLDivElement | null>(
+      null
+    );
+
 
   const [
     signedIn,
@@ -189,11 +292,50 @@ export default function NavBar() {
   ] =
     useState(false);
 
+
   const [
-    menuOpen,
-    setMenuOpen,
+    role,
+    setRole,
+  ] =
+    useState<UserRole | null>(
+      null
+    );
+
+
+  const [
+    email,
+    setEmail,
+  ] =
+    useState<string | null>(
+      null
+    );
+
+
+  const [
+    unread,
+    setUnread,
+  ] =
+    useState(0);
+
+
+  const [
+    mobileMenuOpen,
+    setMobileMenuOpen,
   ] =
     useState(false);
+
+
+  const [
+    accountOpen,
+    setAccountOpen,
+  ] =
+    useState(false);
+
+
+  const privileged =
+    isPrivilegedRole(
+      role
+    );
 
 
   useEffect(() => {
@@ -201,14 +343,13 @@ export default function NavBar() {
       false;
 
 
-    async function refresh() {
+    async function refreshSession() {
       const {
         data: {
           session,
         },
       } =
-        await supabase
-          .auth
+        await supabase.auth
           .getSession();
 
 
@@ -217,55 +358,95 @@ export default function NavBar() {
       }
 
 
-      setSignedIn(
-        Boolean(session)
-      );
-
-
       if (!session) {
-        setUnread(0);
+        setSignedIn(
+          false
+        );
+
+        setRole(
+          null
+        );
+
+        setEmail(
+          null
+        );
+
+        setUnread(
+          0
+        );
 
         return;
       }
 
 
+      setSignedIn(
+        true
+      );
+
+      setEmail(
+        session.user.email
+        ??
+        null
+      );
+
+
       try {
-        const result =
-          await getUnreadNotificationCount();
+        const resolvedRole =
+          await getRole(
+            session.access_token
+          );
 
 
-        if (!cancelled) {
+        if (cancelled) {
+          return;
+        }
+
+
+        setRole(
+          resolvedRole
+        );
+
+
+        if (
+          resolvedRole
+          === "customer"
+        ) {
+          try {
+            const result =
+              await getUnreadNotificationCount();
+
+
+            if (!cancelled) {
+              setUnread(
+                result.unread_count
+              );
+            }
+
+          } catch {
+            if (!cancelled) {
+              setUnread(
+                0
+              );
+            }
+          }
+
+        } else {
           setUnread(
-            result.unread_count
+            0
           );
         }
+
       } catch {
-        // Notification badge is best-effort.
+        if (!cancelled) {
+          setRole(
+            "customer"
+          );
+        }
       }
     }
 
 
-    void refresh();
-
-
-    const intervalId =
-      window.setInterval(
-        () => {
-          void refresh();
-        },
-        10000
-      );
-
-
-    function handleNotificationsUpdated() {
-      void refresh();
-    }
-
-
-    window.addEventListener(
-      "notifications-updated",
-      handleNotificationsUpdated
-    );
+    void refreshSession();
 
 
     const {
@@ -275,42 +456,81 @@ export default function NavBar() {
     } =
       supabase.auth
         .onAuthStateChange(
-          (
-            _event,
-            session
-          ) => {
-            if (cancelled) {
-              return;
-            }
-
-            setSignedIn(
-              Boolean(session)
-            );
-
-            if (!session) {
-              setUnread(0);
-            } else {
-              void refresh();
-            }
+          () => {
+            void refreshSession();
           }
         );
 
 
-    return () => {
-      cancelled = true;
+    function handleNotificationsUpdated() {
+      void refreshSession();
+    }
 
-      window.clearInterval(
-        intervalId
-      );
+
+    window.addEventListener(
+      "notifications-updated",
+      handleNotificationsUpdated
+    );
+
+
+    return () => {
+      cancelled =
+        true;
+
+      subscription.unsubscribe();
 
       window.removeEventListener(
         "notifications-updated",
         handleNotificationsUpdated
       );
-
-      subscription.unsubscribe();
     };
   }, []);
+
+
+  useEffect(() => {
+    function handleOutsideClick(
+      event: MouseEvent
+    ) {
+      if (
+        accountRef.current
+        &&
+        !accountRef.current.contains(
+          event.target as Node
+        )
+      ) {
+        setAccountOpen(
+          false
+        );
+      }
+    }
+
+
+    document.addEventListener(
+      "mousedown",
+      handleOutsideClick
+    );
+
+
+    return () => {
+      document.removeEventListener(
+        "mousedown",
+        handleOutsideClick
+      );
+    };
+  }, []);
+
+
+  useEffect(() => {
+    setMobileMenuOpen(
+      false
+    );
+
+    setAccountOpen(
+      false
+    );
+  }, [
+    pathname,
+  ]);
 
 
   if (!signedIn) {
@@ -318,80 +538,105 @@ export default function NavBar() {
   }
 
 
-  const moreSectionActive =
-    MOBILE_MORE_LINKS.some(
-      (
-        link
-      ) =>
-        isActivePath(
-          pathname,
-          link.href
-        )
-    );
+  const navigation =
+    privileged
+      ? ADMIN_LINKS
+      : CUSTOMER_LINKS;
 
 
-  function closeMenu() {
-    setMenuOpen(
+  async function handleLogout() {
+    setAccountOpen(
       false
     );
+
+    setMobileMenuOpen(
+      false
+    );
+
+
+    await supabase.auth
+      .signOut();
+
+
+    router.replace(
+      "/login"
+    );
+
+    router.refresh();
   }
 
 
   return (
-    <header className="sticky top-0 z-50 w-full border-b border-white/10 bg-[#332e34]/95 text-white shadow-lg shadow-black/10 backdrop-blur-xl">
+    <header className="sticky top-0 z-50 h-14 w-full border-b border-white/10 bg-[#332e34]/95 text-white shadow-md shadow-black/10 backdrop-blur-xl">
 
-      <div className="mx-auto flex min-h-16 w-full max-w-[1600px] items-center gap-3 px-4 sm:px-6">
+      <div className="mx-auto flex h-full w-full max-w-[1600px] items-center gap-3 px-4 sm:px-5">
 
         <Link
-          href="/"
-          onClick={
-            closeMenu
+          href={
+            privileged
+              ? "/admin"
+              : "/"
           }
-          className="group flex min-w-0 shrink-0 items-center gap-3"
+          className="flex shrink-0 items-center gap-2.5"
         >
-          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-[#7779de] text-base font-bold text-white shadow-lg shadow-[#7779de]/25 transition group-hover:-translate-y-0.5">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#7779de] text-sm font-bold text-white shadow-md shadow-[#7779de]/20">
             R
           </span>
 
 
-          <div className="min-w-0">
-            <p className="truncate text-sm font-semibold tracking-[0.18em] text-white">
+          <div className="leading-none">
+            <p className="text-sm font-semibold tracking-[0.15em] text-white">
               RETAILIGENT
             </p>
 
-            <p className="hidden text-[10px] tracking-wide text-white/45 sm:block xl:hidden">
-              Intelligent shopping
-            </p>
+            {
+              privileged
+              && (
+                <p className="mt-1 text-[9px] font-semibold uppercase tracking-[0.16em] text-[#aaaaff]">
+                  Staff
+                </p>
+              )
+            }
           </div>
         </Link>
 
 
-        <nav className="hidden min-w-0 flex-1 items-center justify-center gap-0.5 xl:flex">
+        <nav className="hidden min-w-0 flex-1 items-center justify-center gap-0.5 lg:flex">
+
           {
-            DESKTOP_LINKS.map(
+            navigation.map(
               (
-                link
+                item
               ) => {
+                const exact =
+                  "exact" in item
+                    ? Boolean(
+                      item.exact
+                    )
+                    : false;
+
+
                 const active =
                   isActivePath(
                     pathname,
-                    link.href
+                    item.href,
+                    exact
                   );
 
 
                 return (
                   <Link
                     key={
-                      link.href
+                      item.href
                     }
                     href={
-                      link.href
+                      item.href
                     }
                     className={
                       (
-                        "shrink-0 rounded-xl "
+                        "shrink-0 rounded-lg "
                         +
-                        "px-2.5 py-2 "
+                        "px-3 py-2 "
                         +
                         "text-sm transition "
                       )
@@ -401,13 +646,9 @@ export default function NavBar() {
                           ? (
                             "bg-[#7779de] "
                             +
-                            "font-medium "
+                            "font-semibold "
                             +
-                            "text-white "
-                            +
-                            "shadow-md "
-                            +
-                            "shadow-[#7779de]/20"
+                            "text-white"
                           )
                           : (
                             "text-white/70 "
@@ -420,340 +661,354 @@ export default function NavBar() {
                     }
                   >
                     {
-                      link.label
+                      item.label
                     }
                   </Link>
                 );
               }
             )
           }
+
         </nav>
 
 
-        <Link
-          href="/notifications"
-          className="ml-auto hidden shrink-0 items-center gap-2 rounded-xl px-3 py-2 text-sm text-white/80 transition hover:bg-white/10 hover:text-white xl:flex"
-        >
-          <BellIcon />
+        {
+          !privileged
+          && (
+            <Link
+              href="/notifications"
+              aria-label={
+                unread > 0
+                  ? `${unread} unread notifications`
+                  : "Notifications"
+              }
+              className="relative ml-auto hidden items-center gap-2 rounded-lg px-2.5 py-2 text-sm text-white/75 transition hover:bg-white/10 hover:text-white lg:flex"
+            >
+              <BellIcon />
 
-          <span>
-            Notifications
-          </span>
-
-          {
-            unread > 0
-            && (
-              <span className="flex min-h-5 min-w-5 items-center justify-center rounded-full bg-[#f54631] px-1.5 text-[10px] font-bold text-white">
-                {
-                  unread > 99
-                    ? "99+"
-                    : unread
-                }
+              <span>
+                Notifications
               </span>
-            )
-          }
-        </Link>
 
 
-        <div className="ml-auto flex items-center gap-2 xl:hidden">
-
-          <Link
-            href="/notifications"
-            onClick={
-              closeMenu
-            }
-            aria-label={
-              unread > 0
-                ? `${unread} unread notifications`
-                : "Notifications"
-            }
-            className={
-              (
-                "relative flex h-10 w-10 "
-                +
-                "items-center justify-center "
-                +
-                "rounded-xl border "
-                +
-                "transition "
-              )
-              +
-              (
-                isActivePath(
-                  pathname,
-                  "/notifications"
+              {
+                unread > 0
+                && (
+                  <span className="flex min-h-5 min-w-5 items-center justify-center rounded-full bg-[#f54631] px-1.5 text-[9px] font-bold text-white">
+                    {
+                      unread > 99
+                        ? "99+"
+                        : unread
+                    }
+                  </span>
                 )
-                  ? (
-                    "border-[#7779de]/50 "
-                    +
-                    "bg-[#7779de]/20 "
-                    +
-                    "text-white"
-                  )
-                  : (
-                    "border-white/10 "
-                    +
-                    "bg-white/5 "
-                    +
-                    "text-white/85 "
-                    +
-                    "hover:bg-white/10"
-                  )
-              )
-            }
-          >
-            <BellIcon />
+              }
+            </Link>
+          )
+        }
 
 
-            {
-              unread > 0
-              && (
-                <span className="absolute -right-1 -top-1 flex min-h-[18px] min-w-[18px] items-center justify-center rounded-full border-2 border-[#332e34] bg-[#f54631] px-1 text-[9px] font-bold leading-none text-white">
-                  {
-                    unread > 9
-                      ? "9+"
-                      : unread
-                  }
-                </span>
-              )
-            }
-          </Link>
-
-
+        <div
+          ref={
+            accountRef
+          }
+          className={
+            privileged
+              ? "relative ml-auto hidden lg:block"
+              : "relative hidden lg:block"
+          }
+        >
           <button
             type="button"
-            aria-label={
-              menuOpen
-                ? "Close more navigation"
-                : "Open more navigation"
-            }
-            aria-expanded={
-              menuOpen
-            }
-            aria-controls="retailigent-mobile-menu"
             onClick={() => {
-              setMenuOpen(
+              setAccountOpen(
                 (
                   current
                 ) =>
                   !current
               );
             }}
-            className={
-              (
-                "flex h-10 w-10 "
-                +
-                "items-center justify-center "
-                +
-                "rounded-xl border "
-                +
-                "transition "
-              )
-              +
-              (
-                menuOpen
-                ||
-                moreSectionActive
-                  ? (
-                    "border-[#7779de]/50 "
-                    +
-                    "bg-[#7779de]/20 "
-                    +
-                    "text-white"
-                  )
-                  : (
-                    "border-white/10 "
-                    +
-                    "bg-white/5 "
-                    +
-                    "text-white/85 "
-                    +
-                    "hover:bg-white/10"
-                  )
-              )
+            aria-expanded={
+              accountOpen
             }
+            className="flex h-9 items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 text-sm text-white/85 transition hover:bg-white/10 hover:text-white"
           >
-            <MenuIcon
-              open={
-                menuOpen
+            <UserIcon />
+
+            <span>
+              Account
+            </span>
+
+            <span
+              className={
+                (
+                  "text-xs transition-transform "
+                )
+                +
+                (
+                  accountOpen
+                    ? "rotate-180"
+                    : ""
+                )
               }
-            />
+            >
+              ▾
+            </span>
           </button>
+
+
+          {
+            accountOpen
+            && (
+              <div className="absolute right-0 top-[calc(100%+0.5rem)] w-64 overflow-hidden rounded-xl border border-[#e5e0e3] bg-white text-[#332e34] shadow-xl">
+
+                <div className="border-b border-[#eee9ec] px-4 py-3">
+                  <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#7779de]">
+                    {
+                      privileged
+                        ? "Staff account"
+                        : "Customer account"
+                    }
+                  </p>
+
+
+                  {
+                    email
+                    && (
+                      <p className="mt-1 truncate text-xs text-[#716a73]">
+                        {
+                          email
+                        }
+                      </p>
+                    )
+                  }
+                </div>
+
+
+                <div className="p-2">
+
+                  {
+                    privileged
+                      ? (
+                        <Link
+                          href="/admin"
+                          className="block rounded-lg px-3 py-2.5 text-sm font-medium transition hover:bg-[#f5f3f5]"
+                        >
+                          Staff dashboard
+                        </Link>
+                      )
+                      : (
+                        <Link
+                          href="/profile"
+                          className="block rounded-lg px-3 py-2.5 text-sm font-medium transition hover:bg-[#f5f3f5]"
+                        >
+                          Profile
+                        </Link>
+                      )
+                  }
+
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void handleLogout();
+                    }}
+                    className="mt-1 w-full rounded-lg px-3 py-2.5 text-left text-sm font-medium text-[#b4382d] transition hover:bg-[#fff0ed]"
+                  >
+                    Logout
+                  </button>
+
+                </div>
+
+              </div>
+            )
+          }
+
         </div>
+
+
+        <button
+          type="button"
+          onClick={() => {
+            setMobileMenuOpen(
+              (
+                current
+              ) =>
+                !current
+            );
+          }}
+          aria-expanded={
+            mobileMenuOpen
+          }
+          aria-label={
+            mobileMenuOpen
+              ? "Close navigation"
+              : "Open navigation"
+          }
+          className="ml-auto flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-white lg:hidden"
+        >
+          <MenuIcon
+            open={
+              mobileMenuOpen
+            }
+          />
+        </button>
+
       </div>
 
 
       {
-        menuOpen
+        mobileMenuOpen
         && (
-          <div
-            id="retailigent-mobile-menu"
-            className="border-t border-white/10 bg-[#332e34] shadow-2xl xl:hidden"
-          >
-            <div className="mx-auto w-full max-w-xl px-4 pb-5 pt-4 sm:px-6">
+          <div className="absolute left-0 right-0 top-14 border-t border-white/10 bg-[#332e34] shadow-xl lg:hidden">
 
-              <div className="mb-4 flex items-center justify-between">
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-white/45">
-                    More
-                  </p>
+            <div className="max-h-[calc(100dvh-3.5rem)] overflow-y-auto px-4 py-4">
 
-                  <p className="mt-1 text-sm text-white/70">
-                    Shopping tools and automation
-                  </p>
-                </div>
+              <nav className="grid gap-1">
 
-
-                <span className="rounded-full bg-white/5 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-white/55">
-                  Retailigent
-                </span>
-              </div>
-
-
-              <nav className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                 {
-                  MOBILE_MORE_LINKS.map(
+                  navigation.map(
                     (
-                      link
+                      item
                     ) => {
+                      const exact =
+                        "exact" in item
+                          ? Boolean(
+                            item.exact
+                          )
+                          : false;
+
+
                       const active =
                         isActivePath(
                           pathname,
-                          link.href
+                          item.href,
+                          exact
                         );
 
 
                       return (
                         <Link
                           key={
-                            link.href
+                            item.href
                           }
                           href={
-                            link.href
-                          }
-                          onClick={
-                            closeMenu
+                            item.href
                           }
                           className={
                             (
-                              "group rounded-2xl border "
+                              "rounded-xl "
                               +
-                              "px-4 py-3.5 "
+                              "px-3 py-2.5 "
                               +
-                              "transition "
+                              "text-sm transition "
                             )
                             +
                             (
                               active
                                 ? (
-                                  "border-[#7779de]/60 "
+                                  "bg-[#7779de] "
                                   +
-                                  "bg-[#7779de]/20"
+                                  "font-semibold "
+                                  +
+                                  "text-white"
                                 )
                                 : (
-                                  "border-white/10 "
+                                  "text-white/75 "
                                   +
-                                  "bg-white/5 "
+                                  "hover:bg-white/10 "
                                   +
-                                  "hover:border-white/20 "
-                                  +
-                                  "hover:bg-white/10"
+                                  "hover:text-white"
                                 )
                             )
                           }
                         >
-                          <div className="flex items-center justify-between gap-3">
-                            <div className="min-w-0">
-                              <p
-                                className={
-                                  (
-                                    "text-sm font-semibold "
-                                  )
-                                  +
-                                  (
-                                    active
-                                      ? "text-white"
-                                      : "text-white/90"
-                                  )
-                                }
-                              >
-                                {
-                                  link.label
-                                }
-                              </p>
-
-                              <p className="mt-1 text-xs leading-5 text-white/45">
-                                {
-                                  link.description
-                                }
-                              </p>
-                            </div>
-
-
-                            <svg
-                              viewBox="0 0 24 24"
-                              aria-hidden="true"
-                              className="h-4 w-4 shrink-0 text-white/35 transition group-hover:translate-x-0.5 group-hover:text-white/70"
-                              fill="none"
-                              stroke="currentColor"
-                              strokeWidth="2"
-                            >
-                              <path
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                                d="M9 5l7 7-7 7"
-                              />
-                            </svg>
-                          </div>
+                          {
+                            item.label
+                          }
                         </Link>
                       );
                     }
                   )
                 }
-              </nav>
-
-
-              <Link
-                href="/notifications"
-                onClick={
-                  closeMenu
-                }
-                className="mt-3 flex min-h-12 items-center justify-between rounded-2xl border border-white/10 bg-white/5 px-4 py-3 transition hover:bg-white/10"
-              >
-                <div className="flex items-center gap-3">
-                  <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/10 text-white">
-                    <BellIcon />
-                  </span>
-
-                  <div>
-                    <p className="text-sm font-semibold text-white/90">
-                      Notifications
-                    </p>
-
-                    <p className="text-xs text-white/45">
-                      View Retailigent activity
-                    </p>
-                  </div>
-                </div>
 
 
                 {
-                  unread > 0
+                  !privileged
                   && (
-                    <span className="rounded-full bg-[#f54631] px-2.5 py-1 text-xs font-bold text-white">
+                    <Link
+                      href="/notifications"
+                      className="flex items-center justify-between rounded-xl px-3 py-2.5 text-sm text-white/75 transition hover:bg-white/10 hover:text-white"
+                    >
+                      <span>
+                        Notifications
+                      </span>
+
+
                       {
-                        unread > 99
-                          ? "99+"
-                          : unread
+                        unread > 0
+                        && (
+                          <span className="rounded-full bg-[#f54631] px-2 py-0.5 text-[10px] font-bold text-white">
+                            {
+                              unread > 99
+                                ? "99+"
+                                : unread
+                            }
+                          </span>
+                        )
                       }
-                    </span>
+                    </Link>
                   )
                 }
-              </Link>
+
+              </nav>
+
+
+              <div className="mt-4 border-t border-white/10 pt-4">
+
+                {
+                  email
+                  && (
+                    <p className="mb-2 truncate px-3 text-xs text-white/45">
+                      {
+                        email
+                      }
+                    </p>
+                  )
+                }
+
+
+                {
+                  !privileged
+                  && (
+                    <Link
+                      href="/profile"
+                      className="block rounded-xl px-3 py-2.5 text-sm text-white/75 transition hover:bg-white/10 hover:text-white"
+                    >
+                      Profile
+                    </Link>
+                  )
+                }
+
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    void handleLogout();
+                  }}
+                  className="mt-1 w-full rounded-xl px-3 py-2.5 text-left text-sm font-medium text-[#ff9d91] transition hover:bg-white/10"
+                >
+                  Logout
+                </button>
+
+              </div>
+
             </div>
+
           </div>
         )
       }
+
     </header>
   );
 }

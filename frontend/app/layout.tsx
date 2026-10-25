@@ -12,19 +12,21 @@ import {
 } from "next/font/google";
 
 import "./globals.css";
+import "./density.css";
 
 import MobileBottomNav from "@/components/MobileBottomNav";
 import NavBar from "@/components/NavBar";
 
 
-const geistSans = Geist({
-  variable:
-    "--font-geist-sans",
+const geistSans =
+  Geist({
+    variable:
+      "--font-geist-sans",
 
-  subsets: [
-    "latin",
-  ],
-});
+    subsets: [
+      "latin",
+    ],
+  });
 
 
 const geistMono =

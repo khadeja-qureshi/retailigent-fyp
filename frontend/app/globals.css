@@ -1259,3 +1259,16 @@ main.bg-black
     1rem
     !important;
 }
+
+.text-neutral-100 {
+  color: var(--ri-ink) !important;
+}
+
+.text-neutral-200 {
+  color: #49434a !important;
+}
+@media (min-width: 1024px) {
+  html {
+    font-size: 15px;
+  }
+}

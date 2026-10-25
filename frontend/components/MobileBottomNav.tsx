@@ -16,13 +16,50 @@ import {
 } from "@/lib/supabase/client";
 
 
+const API_URL =
+  (
+    process.env
+      .NEXT_PUBLIC_API_URL
+    ??
+    "http://127.0.0.1:8000"
+  ).replace(
+    /\/+$/,
+    ""
+  );
+
+
+type UserRole =
+  | "customer"
+  | "staff"
+  | "manager"
+  | "admin";
+
+
+function isPrivilegedRole(
+  role: UserRole | null
+) {
+  return (
+    role === "staff"
+    ||
+    role === "manager"
+    ||
+    role === "admin"
+  );
+}
+
+
 function isActivePath(
   pathname: string,
   href: string
 ) {
-  if (href === "/") {
-    return pathname === "/";
+  if (
+    href === "/"
+  ) {
+    return (
+      pathname === "/"
+    );
   }
+
 
   return (
     pathname === href
@@ -31,6 +68,108 @@ function isActivePath(
       `${href}/`
     )
   );
+}
+
+
+async function getRole(
+  accessToken: string
+): Promise<UserRole> {
+
+  try {
+    const controller =
+      new AbortController();
+
+
+    const timeout =
+      window.setTimeout(
+        () => {
+          controller.abort();
+        },
+        10000
+      );
+
+
+    try {
+      const response =
+        await fetch(
+          `${API_URL}/api/v1/me/role`,
+          {
+            method:
+              "GET",
+
+            headers: {
+              Authorization:
+                `Bearer ${accessToken}`,
+            },
+
+            cache:
+              "no-store",
+
+            signal:
+              controller.signal,
+          }
+        );
+
+
+      if (
+        !response.ok
+      ) {
+        console.warn(
+          "Role endpoint returned:",
+          response.status,
+        );
+
+
+        return (
+          "customer"
+        );
+      }
+
+
+      const payload =
+        await response.json();
+
+
+      const role =
+        payload?.role;
+
+
+      if (
+        role === "staff"
+        ||
+        role === "manager"
+        ||
+        role === "admin"
+      ) {
+        return role;
+      }
+
+
+      return (
+        "customer"
+      );
+
+    } finally {
+      window.clearTimeout(
+        timeout
+      );
+    }
+
+  } catch (error) {
+    /*
+     * Navigation must never crash the entire
+     * Next.js application.
+     */
+    console.warn(
+      "Could not load user role:",
+      error,
+    );
+
+
+    return (
+      "customer"
+    );
+  }
 }
 
 
@@ -71,7 +210,7 @@ function AssistantIcon() {
     <svg
       viewBox="0 0 24 24"
       aria-hidden="true"
-      className="h-6 w-6"
+      className="h-5 w-5"
       fill="none"
       stroke="currentColor"
       strokeWidth="1.8"
@@ -178,30 +317,61 @@ function ProfileIcon() {
 
 const NAV_ITEMS = [
   {
-    href: "/",
-    label: "Home",
-    icon: HomeIcon,
+    href:
+      "/",
+
+    label:
+      "Home",
+
+    icon:
+      HomeIcon,
   },
+
   {
-    href: "/cart",
-    label: "Cart",
-    icon: CartIcon,
+    href:
+      "/cart",
+
+    label:
+      "Cart",
+
+    icon:
+      CartIcon,
   },
+
   {
-    href: "/chat",
-    label: "Assistant",
-    icon: AssistantIcon,
-    primary: true,
+    href:
+      "/chat",
+
+    label:
+      "Assistant",
+
+    icon:
+      AssistantIcon,
+
+    primary:
+      true,
   },
+
   {
-    href: "/orders",
-    label: "Orders",
-    icon: OrdersIcon,
+    href:
+      "/orders",
+
+    label:
+      "Orders",
+
+    icon:
+      OrdersIcon,
   },
+
   {
-    href: "/profile",
-    label: "Profile",
-    icon: ProfileIcon,
+    href:
+      "/profile",
+
+    label:
+      "Profile",
+
+    icon:
+      ProfileIcon,
   },
 ];
 
@@ -210,82 +380,142 @@ export default function MobileBottomNav() {
   const pathname =
     usePathname();
 
+
   const [
     signedIn,
     setSignedIn,
   ] =
-    useState(false);
+    useState(
+      false
+    );
 
 
-  useEffect(() => {
-    let active =
-      true;
+  const [
+    role,
+    setRole,
+  ] =
+    useState<UserRole | null>(
+      null
+    );
 
 
-    void supabase.auth
-      .getSession()
-      .then(
-        ({
-          data,
-        }) => {
-          if (!active) {
+  useEffect(
+    () => {
+      let cancelled =
+        false;
+
+
+      async function refresh() {
+        try {
+          const {
+            data: {
+              session,
+            },
+          } =
+            await supabase
+              .auth
+              .getSession();
+
+
+          if (
+            cancelled
+          ) {
             return;
           }
 
-          setSignedIn(
-            Boolean(
-              data.session
-            )
-          );
-        }
-      );
 
-
-    const {
-      data: {
-        subscription,
-      },
-    } =
-      supabase.auth
-        .onAuthStateChange(
-          (
-            _event,
-            session
-          ) => {
-            if (!active) {
-              return;
-            }
-
+          if (
+            !session
+          ) {
             setSignedIn(
-              Boolean(session)
+              false
+            );
+
+            setRole(
+              null
+            );
+
+            return;
+          }
+
+
+          setSignedIn(
+            true
+          );
+
+
+          const resolvedRole =
+            await getRole(
+              session
+                .access_token
+            );
+
+
+          if (
+            cancelled
+          ) {
+            return;
+          }
+
+
+          setRole(
+            resolvedRole
+          );
+
+        } catch (error) {
+          console.warn(
+            "Mobile navigation refresh failed:",
+            error,
+          );
+
+
+          if (
+            !cancelled
+          ) {
+            setRole(
+              "customer"
             );
           }
-        );
+        }
+      }
 
 
-    return () => {
-      active = false;
-
-      subscription.unsubscribe();
-    };
-  }, []);
+      void refresh();
 
 
-  if (!signedIn) {
-    return null;
-  }
+      const {
+        data: {
+          subscription,
+        },
+      } =
+        supabase
+          .auth
+          .onAuthStateChange(
+            () => {
+              void refresh();
+            }
+          );
 
 
-  /*
-   * The chat has a sticky composer at the bottom.
-   * Hiding the mobile dock there prevents overlap and
-   * gives the customer maximum typing space.
-   */
+      return () => {
+        cancelled =
+          true;
+
+        subscription
+          .unsubscribe();
+      };
+    },
+    []
+  );
+
+
   if (
-    pathname === "/chat"
+    !signedIn
     ||
-    pathname.startsWith(
-      "/chat/"
+    !role
+    ||
+    isPrivilegedRole(
+      role
     )
   ) {
     return null;
@@ -294,229 +524,119 @@ export default function MobileBottomNav() {
 
   return (
     <>
-      {/*
-        Flow spacer:
-        prevents the fixed navigation from covering
-        the final content on mobile pages.
-      */}
       <div
+        className="ri-mobile-nav-spacer md:hidden"
         aria-hidden="true"
-        className="h-24 xl:hidden"
       />
 
 
-      <div className="fixed inset-x-0 bottom-0 z-50 xl:hidden">
-        <div className="mx-auto w-full max-w-md px-3 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
+      <nav className="fixed inset-x-0 bottom-0 z-50 border-t border-[#e4dfe2] bg-white/95 px-2 pb-[max(0.35rem,env(safe-area-inset-bottom))] pt-1.5 shadow-[0_-8px_30px_rgba(51,46,52,0.08)] backdrop-blur-xl md:hidden">
 
-          <nav className="grid grid-cols-5 items-end rounded-[1.7rem] border border-[#d8c8c1]/80 bg-[#fffaf7]/95 px-2 pb-2 pt-2 shadow-[0_-12px_35px_rgba(51,46,52,0.16)] backdrop-blur-xl">
+        <div className="mx-auto grid max-w-lg grid-cols-5">
 
-            {
-              NAV_ITEMS.map(
-                (
-                  item
-                ) => {
-                  const active =
-                    isActivePath(
-                      pathname,
+          {
+            NAV_ITEMS.map(
+              (
+                item
+              ) => {
+                const Icon =
+                  item.icon;
+
+
+                const active =
+                  isActivePath(
+                    pathname,
+                    item.href
+                  );
+
+
+                return (
+                  <Link
+                    key={
                       item.href
-                    );
+                    }
+                    href={
+                      item.href
+                    }
+                    className="flex min-w-0 flex-col items-center justify-center gap-1 py-1"
+                  >
 
-                  const Icon =
-                    item.icon;
-
-
-                  if (
-                    item.primary
-                  ) {
-                    return (
-                      <Link
-                        key={
-                          item.href
-                        }
-                        href={
-                          item.href
-                        }
-                        aria-label={
-                          item.label
-                        }
-                        className="group flex min-w-0 flex-col items-center justify-end"
-                      >
-                        <span
-                          className={
-                            (
-                              "-mt-7 flex "
-                              +
-                              "h-14 w-14 "
-                              +
-                              "items-center "
-                              +
-                              "justify-center "
-                              +
-                              "rounded-2xl "
-                              +
-                              "border-4 "
-                              +
-                              "border-[#f1e6de] "
-                              +
-                              "shadow-lg "
-                              +
-                              "transition "
-                              +
-                              "group-active:scale-95 "
-                            )
-                            +
-                            (
+                    <span
+                      className={
+                        (
+                          "flex h-8 w-10 "
+                          +
+                          "items-center justify-center "
+                          +
+                          "rounded-xl transition "
+                        )
+                        +
+                        (
+                          item.primary
+                            ? (
                               active
                                 ? (
-                                  "bg-[#5f62c7] "
-                                  +
-                                  "text-white "
-                                  +
-                                  "shadow-[#7779de]/30"
-                                )
-                                : (
                                   "bg-[#7779de] "
                                   +
-                                  "text-white "
+                                  "text-white"
+                                )
+                                : (
+                                  "bg-[#eeedfb] "
                                   +
-                                  "shadow-[#7779de]/25"
+                                  "text-[#5f62c7]"
                                 )
                             )
-                          }
-                        >
-                          <Icon />
-                        </span>
-
-                        <span
-                          className={
-                            (
-                              "mt-1.5 truncate "
-                              +
-                              "text-[10px] "
-                              +
-                              "font-semibold "
-                            )
-                            +
-                            (
+                            : (
                               active
-                                ? "text-[#5f62c7]"
-                                : "text-[#756369]"
+                                ? (
+                                  "bg-[#eeedfb] "
+                                  +
+                                  "text-[#5f62c7]"
+                                )
+                                : (
+                                  "text-[#716a73]"
+                                )
                             )
-                          }
-                        >
-                          {
-                            item.label
-                          }
-                        </span>
-                      </Link>
-                    );
-                  }
+                        )
+                      }
+                    >
+                      <Icon />
+                    </span>
 
 
-                  return (
-                    <Link
-                      key={
-                        item.href
+                    <span
+                      className={
+                        (
+                          "max-w-full truncate "
+                          +
+                          "text-[9px] font-medium "
+                        )
+                        +
+                        (
+                          active
+                            ? (
+                              "text-[#5f62c7]"
+                            )
+                            : (
+                              "text-[#716a73]"
+                            )
+                        )
                       }
-                      href={
-                        item.href
-                      }
-                      aria-label={
+                    >
+                      {
                         item.label
                       }
-                      className="group flex min-w-0 flex-col items-center justify-center rounded-2xl px-1 py-1.5 transition active:scale-95"
-                    >
-                      <span
-                        className={
-                          (
-                            "flex h-8 w-8 "
-                            +
-                            "items-center "
-                            +
-                            "justify-center "
-                            +
-                            "rounded-xl "
-                            +
-                            "transition "
-                          )
-                          +
-                          (
-                            active
-                              ? (
-                                "bg-[#eeeafb] "
-                                +
-                                "text-[#5f62c7]"
-                              )
-                              : (
-                                "text-[#8c777c] "
-                                +
-                                "group-hover:bg-[#f1e6de] "
-                                +
-                                "group-hover:text-[#332e34]"
-                              )
-                          )
-                        }
-                      >
-                        <Icon />
-                      </span>
+                    </span>
 
-                      <span
-                        className={
-                          (
-                            "mt-1 truncate "
-                            +
-                            "text-[10px] "
-                            +
-                            "font-medium "
-                          )
-                          +
-                          (
-                            active
-                              ? "text-[#5f62c7]"
-                              : "text-[#8c777c]"
-                          )
-                        }
-                      >
-                        {
-                          item.label
-                        }
-                      </span>
+                  </Link>
+                );
+              }
+            )
+          }
 
-
-                      <span
-                        aria-hidden="true"
-                        className={
-                          (
-                            "mt-1 h-1 "
-                            +
-                            "rounded-full "
-                            +
-                            "transition-all "
-                          )
-                          +
-                          (
-                            active
-                              ? (
-                                "w-4 "
-                                +
-                                "bg-[#7779de]"
-                              )
-                              : (
-                                "w-1 "
-                                +
-                                "bg-transparent"
-                              )
-                          )
-                        }
-                      />
-                    </Link>
-                  );
-                }
-              )
-            }
-          </nav>
         </div>
-      </div>
+
+      </nav>
     </>
   );
 }
