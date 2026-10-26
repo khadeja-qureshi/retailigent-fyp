@@ -1,6 +1,4 @@
-import {
-  supabase,
-} from "@/lib/supabase/client";
+import { supabase } from "@/lib/supabase/client";
 
 import type {
   ChatStreamEvent,
@@ -9,27 +7,118 @@ import type {
 } from "@/lib/chat-types";
 
 
-const API_URL =
-  process.env
-    .NEXT_PUBLIC_API_URL
-  ??
-  "http://127.0.0.1:8000";
+const API_URL = (
+  process.env.NEXT_PUBLIC_API_URL ??
+  "http://127.0.0.1:8000"
+).replace(/\/+$/, "");
 
 
 interface StreamChatOptions {
   message: string;
 
-  conversationId?:
-    | string
-    | null;
+  latitude?: number | null;
+  longitude?: number | null;
 
-  signal?:
-    AbortSignal;
+  conversationId?: string | null;
+
+  signal?: AbortSignal;
 
   onEvent: (
-    event:
-      ChatStreamEvent
+    event: ChatStreamEvent
   ) => void;
+}
+
+
+function messageNeedsLocation(
+  message: string
+): boolean {
+  const normalized =
+    message.toLowerCase();
+
+  const locationTerms = [
+    "nearest",
+    "closest",
+    "near me",
+    "nearby",
+
+    "qareeb",
+    "kareeb",
+
+    "nazdeek",
+    "nazdik",
+
+    "near my location",
+    "closest branch",
+    "nearest branch",
+    "closest store",
+    "nearest store",
+  ];
+
+  return locationTerms.some(
+    (term) =>
+      normalized.includes(term)
+  );
+}
+
+
+async function getBrowserLocation(
+  message: string
+): Promise<
+  {
+    latitude: number;
+    longitude: number;
+  }
+  | null
+> {
+  if (
+    typeof window === "undefined"
+    ||
+    !messageNeedsLocation(message)
+  ) {
+    return null;
+  }
+
+
+  if (
+    typeof navigator === "undefined"
+    ||
+    !("geolocation" in navigator)
+  ) {
+    return null;
+  }
+
+
+  return new Promise(
+    (resolve) => {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          resolve({
+            latitude:
+              position.coords.latitude,
+
+            longitude:
+              position.coords.longitude,
+          });
+        },
+
+        () => {
+          /*
+           * Location permission may be denied,
+           * unavailable or time out.
+           *
+           * Chat should continue normally.
+           */
+          resolve(null);
+        },
+
+        {
+          enableHighAccuracy: false,
+          timeout: 5000,
+          maximumAge: 300000,
+        }
+      );
+    }
+  );
 }
 
 
@@ -40,32 +129,30 @@ Promise<string> {
       session,
     },
   } =
-    await supabase
-      .auth
+    await supabase.auth
       .getSession();
 
+
   if (
-    !session
-      ?.access_token
+    !session?.access_token
   ) {
     throw new Error(
       "You must sign in before using chat."
     );
   }
 
-  return (
-    session.access_token
-  );
+
+  return session.access_token;
 }
 
 
 async function authenticatedJson<T>(
   path: string,
-  options:
-    RequestInit = {}
+  options: RequestInit = {}
 ): Promise<T> {
   const token =
     await getAccessToken();
+
 
   const response =
     await fetch(
@@ -88,13 +175,16 @@ async function authenticatedJson<T>(
       }
     );
 
+
   if (!response.ok) {
     let detail =
-      "Request failed.";
+      `Request failed (${response.status}).`;
+
 
     try {
       const payload =
         await response.json();
+
 
       if (
         payload
@@ -105,14 +195,17 @@ async function authenticatedJson<T>(
         detail =
           payload.detail;
       }
+
     } catch {
       // Keep generic error.
     }
+
 
     throw new Error(
       detail
     );
   }
+
 
   return (
     await response.json()
@@ -126,11 +219,14 @@ function parseSseFrame(
   const lines =
     frame.split("\n");
 
+
   let event =
     "message";
 
+
   const dataLines:
     string[] = [];
+
 
   for (
     const rawLine
@@ -142,6 +238,7 @@ function parseSseFrame(
         ""
       );
 
+
     if (
       !line
       ||
@@ -149,6 +246,7 @@ function parseSseFrame(
     ) {
       continue;
     }
+
 
     if (
       line.startsWith(
@@ -165,6 +263,7 @@ function parseSseFrame(
       continue;
     }
 
+
     if (
       line.startsWith(
         "data:"
@@ -180,27 +279,30 @@ function parseSseFrame(
     }
   }
 
+
   if (
-    dataLines.length
-    === 0
+    dataLines.length === 0
   ) {
     return null;
   }
 
+
   const rawData =
     dataLines.join("\n");
 
+
   let data: unknown;
+
 
   try {
     data =
-      JSON.parse(
-        rawData
-      );
+      JSON.parse(rawData);
+
   } catch {
     data =
       rawData;
   }
+
 
   return {
     event,
@@ -226,7 +328,8 @@ export async function getConversationHistory(
     ConversationHistoryResponse
   >(
     "/api/v1/chat/conversations/"
-    + encodeURIComponent(
+    +
+    encodeURIComponent(
       conversationId
     )
   );
@@ -242,10 +345,12 @@ export async function finalizeConversation(
     memories: unknown[];
   }>(
     "/api/v1/chat/"
-    + encodeURIComponent(
+    +
+    encodeURIComponent(
       conversationId
     )
-    + "/finalize",
+    +
+    "/finalize",
     {
       method: "POST",
     }
@@ -255,13 +360,51 @@ export async function finalizeConversation(
 
 export async function streamChat({
   message,
+  latitude,
+  longitude,
   conversationId,
   signal,
   onEvent,
 }: StreamChatOptions):
 Promise<void> {
+
   const token =
     await getAccessToken();
+
+
+  let resolvedLatitude =
+    latitude ?? null;
+
+  let resolvedLongitude =
+    longitude ?? null;
+
+
+  /*
+   * Only request browser location for
+   * explicitly location-dependent queries.
+   */
+  if (
+    resolvedLatitude == null
+    ||
+    resolvedLongitude == null
+  ) {
+    const browserLocation =
+      await getBrowserLocation(
+        message
+      );
+
+
+    if (
+      browserLocation
+    ) {
+      resolvedLatitude =
+        browserLocation.latitude;
+
+      resolvedLongitude =
+        browserLocation.longitude;
+    }
+  }
+
 
   const response =
     await fetch(
@@ -285,19 +428,28 @@ Promise<void> {
             conversation_id:
               conversationId
               ?? null,
+
+            latitude:
+              resolvedLatitude,
+
+            longitude:
+              resolvedLongitude,
           }),
 
         signal,
       }
     );
 
+
   if (!response.ok) {
     let detail =
-      "Chat request failed.";
+      `Chat request failed (${response.status}).`;
+
 
     try {
       const payload =
         await response.json();
+
 
       if (
         payload
@@ -308,14 +460,17 @@ Promise<void> {
         detail =
           payload.detail;
       }
+
     } catch {
       // Keep generic error.
     }
+
 
     throw new Error(
       detail
     );
   }
+
 
   if (!response.body) {
     throw new Error(
@@ -323,16 +478,20 @@ Promise<void> {
     );
   }
 
+
   const reader =
     response.body
       .getReader();
+
 
   const decoder =
     new TextDecoder(
       "utf-8"
     );
 
+
   let buffer = "";
+
 
   try {
     while (true) {
@@ -342,9 +501,11 @@ Promise<void> {
       } =
         await reader.read();
 
+
       if (done) {
         break;
       }
+
 
       buffer +=
         decoder.decode(
@@ -354,20 +515,26 @@ Promise<void> {
           }
         );
 
+
+      /*
+       * Normalize CRLF before looking
+       * for SSE frame separators.
+       */
       buffer =
         buffer.replace(
           /\r\n/g,
           "\n"
         );
 
+
       let separatorIndex =
         buffer.indexOf(
           "\n\n"
         );
 
+
       while (
-        separatorIndex
-        !== -1
+        separatorIndex !== -1
       ) {
         const frame =
           buffer.slice(
@@ -375,22 +542,25 @@ Promise<void> {
             separatorIndex
           );
 
+
         buffer =
           buffer.slice(
-            separatorIndex
-            + 2
+            separatorIndex + 2
           );
+
 
         const parsed =
           parseSseFrame(
             frame
           );
 
+
         if (parsed) {
           onEvent(
             parsed
           );
         }
+
 
         separatorIndex =
           buffer.indexOf(
@@ -399,11 +569,14 @@ Promise<void> {
       }
     }
 
+
     buffer +=
       decoder.decode();
 
+
     const finalFrame =
       buffer.trim();
+
 
     if (finalFrame) {
       const parsed =
@@ -411,12 +584,14 @@ Promise<void> {
           finalFrame
         );
 
+
       if (parsed) {
         onEvent(
           parsed
         );
       }
     }
+
   } finally {
     reader.releaseLock();
   }

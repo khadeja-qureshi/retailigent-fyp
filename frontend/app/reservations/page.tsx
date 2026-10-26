@@ -114,10 +114,14 @@ export default function ReservationsPage() {
 
 
   useEffect(() => {
+  const timer = window.setTimeout(() => {
     void loadReservations();
-  }, [
-    loadReservations,
-  ]);
+  }, 0);
+
+  return () => {
+    window.clearTimeout(timer);
+  };
+}, [loadReservations]);
 
 
   async function findBranches() {

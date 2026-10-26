@@ -77,22 +77,47 @@ const ADMIN_LINKS = [
     label: "Dashboard",
     exact: true,
   },
+
+  {
+    href: "/admin/inventory",
+    label: "Inventory",
+  },
+
+  {
+    href: "/admin/promotions",
+    label: "Promotions",
+  },
+
+  {
+    href: "/admin/orders",
+    label: "Orders",
+  },
+
   {
     href: "/admin/tickets",
     label: "Tickets",
   },
+
   {
     href: "/admin/feedback",
     label: "Feedback",
   },
+
+  {
+    href: "/admin/demand-signals",
+    label: "Demand",
+  },
+
   {
     href: "/admin/analytics",
     label: "Analytics",
   },
+
   {
     href: "/admin/ask",
     label: "Assistant",
   },
+
   {
     href: "/admin/audit-logs",
     label: "Audit Logs",
@@ -521,16 +546,14 @@ export default function NavBar() {
 
 
   useEffect(() => {
-    setMobileMenuOpen(
-      false
-    );
+  const timer = window.setTimeout(() => {
+    setMobileMenuOpen(false);
+  }, 0);
 
-    setAccountOpen(
-      false
-    );
-  }, [
-    pathname,
-  ]);
+  return () => {
+    window.clearTimeout(timer);
+  };
+}, [pathname]);
 
 
   if (!signedIn) {

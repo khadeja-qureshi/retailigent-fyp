@@ -65,8 +65,9 @@ export interface BranchLocationData {
   area?: string | null;
   address?: string | null;
   latitude?: number | null;
-  longitude?: number | null;
-  phone?: string | null;
+longitude?: number | null;
+distance_km?: number | null;
+phone?: string | null;
   opening_time?: string | null;
   closing_time?: string | null;
 }

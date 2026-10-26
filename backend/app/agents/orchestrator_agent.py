@@ -247,31 +247,115 @@ def resolve_variant_references(
     return [single]
 
 
+def _effective_location_product_name(
+    parsed: ParsedCustomerMessage,
+) -> str | None:
+    """
+    Return a genuine product reference from a location query.
+
+    The interaction parser intentionally supports questions such as
+    "Where is X?" for products, but that generic pattern can also
+    capture branch phrases such as "the Clifton branch".  A branch
+    phrase must never cause a pure store-location question to inherit
+    product/stock context.
+    """
+
+    product_name = (
+        parsed.entities.product_name
+        or ""
+    ).strip()
+
+    if not product_name:
+        return None
+
+    lowered = product_name.casefold()
+    branch_name = (
+        parsed.entities.branch_name
+        or ""
+    ).strip().casefold()
+
+    if (
+        branch_name
+        and branch_name in lowered
+        and re.search(
+            r"\b(?:branch|store)\b",
+            lowered,
+        )
+    ):
+        return None
+
+    return product_name
+
+
+def _location_filter_from_message(
+    parsed: ParsedCustomerMessage,
+) -> str | None:
+    """
+    Resolve a general location filter without changing the chat schema.
+
+    The existing branch_name entity is retained for named branches, while
+    common city names are read directly from the raw message.  The location
+    service treats this value as branch-name / city / area text.
+    """
+
+    if parsed.entities.branch_name:
+        return parsed.entities.branch_name
+
+    text = parsed.raw_message.casefold()
+
+    city_aliases = {
+        "karachi": "Karachi",
+        "lahore": "Lahore",
+        "islamabad": "Islamabad",
+    }
+
+    for token, normalized in city_aliases.items():
+        if re.search(
+            rf"\b{re.escape(token)}\b",
+            text,
+        ):
+            return normalized
+
+    return None
+
+
+def _location_query_wants_nearest(
+    parsed: ParsedCustomerMessage,
+) -> bool:
+    text = parsed.raw_message.casefold()
+
+    return bool(
+        re.search(
+            r"\b(?:nearest|closest|nearby)\b",
+            text,
+        )
+        or re.search(
+            r"\b(?:qareeb|kareeb|nazdeek|nazdik|nazdiq)\b",
+            text,
+        )
+        or "near me" in text
+        or "close to me" in text
+    )
+
+
 def _location_query_requires_inventory(
     parsed: ParsedCustomerMessage,
 ) -> bool:
-    text = (
-        parsed.raw_message.casefold()
+    text = parsed.raw_message.casefold()
+    product_name = _effective_location_product_name(
+        parsed
     )
 
     return bool(
         parsed.entities.variant_id
-        or
-        parsed.entities.product_name
-        or
-        parsed.entities.category
-        or
-        parsed.entities.color
-        or
-        parsed.entities.size
-        or
-        parsed.entities.material
-        or
-        " stock" in f" {text}"
-        or
-        "available" in text
-        or
-        re.search(
+        or product_name
+        or parsed.entities.category
+        or parsed.entities.color
+        or parsed.entities.size
+        or parsed.entities.material
+        or " stock" in f" {text}"
+        or "available" in text
+        or re.search(
             r"\b(?:branch|store)\s+has\b",
             text,
         )
@@ -320,8 +404,14 @@ def resolve_location_variant_ids(
         else {}
     )
 
+    effective_product_name = (
+        _effective_location_product_name(
+            parsed
+        )
+    )
+
     product_query = (
-        parsed.entities.product_name
+        effective_product_name
         or ""
     ).strip()
 
@@ -378,7 +468,7 @@ def resolve_location_variant_ids(
         # If user explicitly names a new product,
         # don't inherit unrelated old filters.
         if (
-            not parsed.entities.product_name
+            not effective_product_name
         ):
             category = (
                 category
@@ -417,7 +507,7 @@ def resolve_location_variant_ids(
                         "min_price"
                     )
                     if not
-                    parsed.entities.product_name
+                    effective_product_name
                     else None
                 ),
                 max_price=(
@@ -425,7 +515,7 @@ def resolve_location_variant_ids(
                         "max_price"
                     )
                     if not
-                    parsed.entities.product_name
+                    effective_product_name
                     else None
                 ),
             )
@@ -1068,14 +1158,19 @@ class OrchestratorAgent:
         )
 
     def process_turn(
-        self,
-        *,
-        customer_id: str,
-        message: str,
-        conversation_id: (
-            str | None
-        ) = None,
-    ) -> ChatTurnResponse:
+    self,
+    *,
+    customer_id: str,
+    message: str,
+    conversation_id: (
+        str | None
+    ) = None,
+    customer_latitude:
+        float | None = None,
+    customer_longitude:
+        float | None = None,
+) -> ChatTurnResponse:
+
         is_new_conversation = (
             conversation_id is None
         )
@@ -1459,13 +1554,20 @@ class OrchestratorAgent:
                         variant_ids
                     ):
                         arguments = {
-                            "branch_name":
-                                parsed
-                                .entities
-                                .branch_name,
-                            "variant_id":
-                                variant_id,
-                        }
+    "branch_name":
+        _location_filter_from_message(
+            parsed
+        ),
+
+    "variant_id":
+        variant_id,
+
+    "customer_latitude":
+        customer_latitude,
+
+    "customer_longitude":
+        customer_longitude,
+}
 
                         jobs.append(
                             (
@@ -1520,11 +1622,17 @@ class OrchestratorAgent:
 
                 else:
                     arguments = {
-                        "branch_name":
-                            parsed
-                            .entities
-                            .branch_name,
-                    }
+    "branch_name":
+        _location_filter_from_message(
+            parsed
+        ),
+
+    "customer_latitude":
+        customer_latitude,
+
+    "customer_longitude":
+        customer_longitude,
+}
 
                     results = (
                         self
@@ -1542,6 +1650,37 @@ class OrchestratorAgent:
                             ),
                         )
                     )
+
+                if (
+                    results
+                    and
+                    _location_query_wants_nearest(
+                        parsed
+                    )
+                    and
+                    customer_latitude is not None
+                    and
+                    customer_longitude is not None
+                ):
+                    results = sorted(
+                        results,
+                        key=lambda row: (
+                            row.get(
+                                "distance_km"
+                            )
+                            is None,
+                            row.get(
+                                "distance_km"
+                            )
+                            if row.get(
+                                "distance_km"
+                            )
+                            is not None
+                            else float(
+                                "inf"
+                            ),
+                        ),
+                    )[:1]
 
                 block = (
                     BranchMapBlock(

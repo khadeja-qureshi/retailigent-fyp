@@ -24,6 +24,13 @@ from app.core.supabase_client import (
     supabase_admin,
 )
 
+from app.core.logging_config import (
+    configure_logging,
+)
+
+from app.api.v1.admin import (
+    router as admin_router,
+)
 
 from app.api.v1.alerts import (
     router as alerts_router,
@@ -124,16 +131,7 @@ from app.workers.smart_cart_worker import (
 # ============================================================================
 # Logging
 # ============================================================================
-
-logging.basicConfig(
-    level=logging.INFO,
-    format=(
-        "%(asctime)s | "
-        "%(levelname)s | "
-        "%(name)s | "
-        "%(message)s"
-    ),
-)
+configure_logging()
 
 
 logger = logging.getLogger(
@@ -378,6 +376,10 @@ app.add_middleware(
 
 app.include_router(
     auth_router
+)
+
+app.include_router(
+    admin_router
 )
 
 app.include_router(

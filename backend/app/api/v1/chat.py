@@ -156,9 +156,6 @@ async def finalize_conversation(
     """
     Extract and save durable facts when the
     customer leaves a conversation.
-
-    The local LLM therefore does not run during
-    every ordinary shopping turn.
     """
 
     stored = await run_in_threadpool(
@@ -170,8 +167,10 @@ async def finalize_conversation(
     return {
         "conversation_id":
             conversation_id,
+
         "memory_saved":
             len(stored),
+
         "memories":
             stored,
     }
@@ -187,6 +186,7 @@ async def chat(
         require_customer
     ),
 ) -> StreamingResponse:
+
     async def event_stream():
         yield _sse_event(
             "turn_started",
@@ -197,14 +197,48 @@ async def chat(
         )
 
         try:
+            # Build kwargs dynamically.
+            #
+            # This keeps the orchestration contract
+            # backward-compatible for callers/tests
+            # that do not supply browser coordinates,
+            # while still forwarding location when
+            # it is actually available.
+            process_kwargs = {
+                "customer_id":
+                    customer_id,
+
+                "message":
+                    request.message,
+
+                "conversation_id":
+                    request.conversation_id,
+            }
+
+
+            if (
+                request.latitude
+                is not None
+            ):
+                process_kwargs[
+                    "customer_latitude"
+                ] = request.latitude
+
+
+            if (
+                request.longitude
+                is not None
+            ):
+                process_kwargs[
+                    "customer_longitude"
+                ] = request.longitude
+
+
             result = await run_in_threadpool(
                 orchestrator_agent.process_turn,
-                customer_id=customer_id,
-                message=request.message,
-                conversation_id=(
-                    request.conversation_id
-                ),
+                **process_kwargs,
             )
+
 
             yield _sse_event(
                 "conversation",
@@ -214,17 +248,21 @@ async def chat(
                 },
             )
 
+
             yield _sse_event(
                 "message_start",
                 {
                     "message_id":
                         result.message_id,
+
                     "role":
                         "assistant",
+
                     "language":
                         result.language,
                 },
             )
+
 
             for chunk in _text_chunks(
                 result.content
@@ -234,10 +272,12 @@ async def chat(
                     {
                         "message_id":
                             result.message_id,
+
                         "delta":
                             chunk,
                     },
                 )
+
 
             for block in result.blocks:
                 yield _sse_event(
@@ -245,6 +285,7 @@ async def chat(
                     {
                         "message_id":
                             result.message_id,
+
                         "block":
                             block.model_dump(
                                 mode="json"
@@ -252,15 +293,19 @@ async def chat(
                     },
                 )
 
+
             yield _sse_event(
                 "done",
                 {
                     "conversation_id":
                         result.conversation_id,
+
                     "message_id":
                         result.message_id,
+
                     "language":
                         result.language,
+
                     "block_count":
                         len(
                             result.blocks
@@ -268,22 +313,32 @@ async def chat(
                 },
             )
 
+
         except Exception:
+            # Do not expose internal exception
+            # details to the customer.
+            #
+            # Also do not use "message" as a key
+            # inside logging extra={} because it is
+            # a reserved LogRecord field.
             logger.exception(
                 "Chat orchestration failed "
                 "for customer %s",
                 customer_id,
             )
 
+
             yield _sse_event(
                 "error",
                 {
-                    "message": (
-                        "I couldn't complete "
-                        "that request right now."
-                    ),
+                    "message":
+                        (
+                            "I couldn't complete "
+                            "that request right now."
+                        ),
                 },
             )
+
 
     return StreamingResponse(
         event_stream(),
@@ -291,8 +346,10 @@ async def chat(
         headers={
             "Cache-Control":
                 "no-cache",
+
             "Connection":
                 "keep-alive",
+
             "X-Accel-Buffering":
                 "no",
         },

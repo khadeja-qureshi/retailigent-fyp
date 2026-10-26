@@ -1082,32 +1082,95 @@ def classify_intent(
         return "store_location_search"
 
     if _contains_any(
-        text,
-        {
-            "store location",
-            "store locations",
-            "branch location",
-            "branch locations",
-            "nearest branch",
-            "nearest store",
-            "nearby branch",
-            "nearby store",
-            "store hours",
-            "branch hours",
-            "opening hours",
-            "opening time",
-            "closing time",
-            "store address",
-            "branch address",
-            "where is your store",
-            "where is the store",
-            "where is your branch",
-            "gulberg branch",
-            "clifton branch",
-            "dha branch",
-        },
-    ):
-        return "store_location_search"
+    text,
+    {
+        "store location",
+        "store locations",
+        "branch location",
+        "branch locations",
+
+        "branches",
+        "stores",
+
+        "which branch",
+        "which branches",
+        "which store",
+        "which stores",
+
+        "our branches",
+        "your branches",
+        "your stores",
+
+        "branches in",
+        "stores in",
+        "branch in",
+        "store in",
+
+        "where are your branches",
+        "where are your stores",
+        "where are the branches",
+        "where are the stores",
+
+        "nearest branch",
+        "nearest store",
+        "closest branch",
+        "closest store",
+
+        "nearby branch",
+        "nearby store",
+
+        "near me",
+        "close to me",
+
+        "qareeb branch",
+        "qareeb store",
+        "kareeb branch",
+        "kareeb store",
+        "nazdeek branch",
+        "nazdeek store",
+        "nazdik branch",
+        "nazdik store",
+
+        "mere qareeb",
+        "mere kareeb",
+        "mere nazdeek",
+        "mere nazdiq",
+
+        "store hours",
+        "branch hours",
+        "opening hours",
+        "opening time",
+        "closing time",
+
+        "store address",
+        "branch address",
+
+        "where is your store",
+        "where is the store",
+        "where is your branch",
+        "where is the branch",
+
+        "gulberg branch",
+        "clifton branch",
+        "dha branch",
+
+        "karachi branch",
+        "karachi branches",
+        "branches in karachi",
+        "stores in karachi",
+
+        "lahore branch",
+        "lahore branches",
+        "branches in lahore",
+        "stores in lahore",
+
+        "islamabad branch",
+        "islamabad branches",
+        "branches in islamabad",
+        "stores in islamabad",
+    },
+):
+     return "store_location_search"
 
     occasion_recommendation = (
         _contains_any(

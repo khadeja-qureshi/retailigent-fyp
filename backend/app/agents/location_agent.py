@@ -2,27 +2,37 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.services.location_service import search_active_branches
+from app.services.location_service import (
+    search_branches,
+)
 
 
 class LocationAgent:
-    """Finds active retail branches and their published location details."""
+    """Read-only branch/location specialist."""
 
     agent_key = "location_agent"
 
     def search(
         self,
         *,
+        branch_name: str | None = None,
         city: str | None = None,
         area: str | None = None,
-        branch_name: str | None = None,
         variant_id: str | None = None,
+        customer_latitude: float | None = None,
+        customer_longitude: float | None = None,
     ) -> list[dict[str, Any]]:
-        return search_active_branches(
+        return search_branches(
+            branch_name=branch_name,
             city=city,
             area=area,
-            branch_name=branch_name,
             variant_id=variant_id,
+            customer_latitude=(
+                customer_latitude
+            ),
+            customer_longitude=(
+                customer_longitude
+            ),
         )
 
 

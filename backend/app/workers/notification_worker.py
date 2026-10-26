@@ -1,9 +1,9 @@
+from __future__ import annotations
+
 import asyncio
 import logging
 
-from app.config import (
-    settings,
-)
+from app.config import settings
 
 from app.services.notification_service import (
     claim_deliveries,
@@ -30,36 +30,58 @@ JOB_NAME = (
 )
 
 
-def process_pending_deliveries() -> dict:
-    """
-    Drain one notification batch.
-
-    Retry scheduling is controlled atomically in PostgreSQL.
-
-    A delivery:
-      - succeeds -> sent
-      - fails before max attempts -> failed and retried later
-      - fails on final attempt -> dead_letter
-    """
-
-    summary = {
-        "claimed":
-            0,
-
-        "sent":
-            0,
-
-        "failed":
-            0,
-
-        "dead_lettered":
-            0,
+def _empty_summary() -> dict[str, int]:
+    return {
+        "claimed": 0,
+        "sent": 0,
+        "failed": 0,
+        "dead_lettered": 0,
     }
 
 
-    deliveries = (
-        claim_deliveries()
+def process_pending_deliveries() -> dict[str, int]:
+    """
+    Drain one notification-delivery batch.
+
+    PostgreSQL controls:
+    - atomic claiming
+    - retry eligibility
+    - exponential backoff
+    - stale-processing recovery
+    - attempt counting
+
+    Worker behavior:
+    - success -> sent
+    - ordinary failure -> failed
+    - final failure -> dead_letter
+    - claim/database outage -> log and safely
+      return an empty summary so the worker loop
+      survives and tries again next tick
+    """
+
+    summary = (
+        _empty_summary()
     )
+
+
+    # --------------------------------------------------------------
+    # Claim a batch.
+    #
+    # A temporary database/network error must not kill the worker.
+    # The next scheduler tick will retry naturally.
+    # --------------------------------------------------------------
+
+    try:
+        deliveries = (
+            claim_deliveries()
+        )
+
+    except Exception:
+        logger.exception(
+            "Could not claim notification deliveries"
+        )
+
+        return summary
 
 
     summary[
@@ -68,6 +90,13 @@ def process_pending_deliveries() -> dict:
         deliveries
     )
 
+
+    # --------------------------------------------------------------
+    # Process claimed rows independently.
+    #
+    # One failed email must not stop unrelated
+    # in-app/email deliveries in the same batch.
+    # --------------------------------------------------------------
 
     for delivery in deliveries:
         delivery_id = str(
@@ -82,8 +111,7 @@ def process_pending_deliveries() -> dict:
                 "attempts",
                 0,
             )
-            or
-            0
+            or 0
         )
 
 
@@ -110,8 +138,10 @@ def process_pending_deliveries() -> dict:
 
 
             logger.exception(
-                "Notification delivery %s failed "
-                "(attempt=%s/%s)",
+                (
+                    "Notification delivery %s failed "
+                    "(attempt=%s/%s)"
+                ),
                 delivery_id,
                 attempts,
                 settings.notification_max_attempts,
@@ -136,7 +166,10 @@ def process_pending_deliveries() -> dict:
 
 
                     logger.error(
-                        "Notification delivery %s moved to dead letter",
+                        (
+                            "Notification delivery %s "
+                            "moved to dead letter"
+                        ),
                         delivery_id,
                     )
 
@@ -153,9 +186,15 @@ def process_pending_deliveries() -> dict:
 
 
             except Exception:
+                # Failure-state persistence itself
+                # should not stop processing other
+                # already-claimed rows.
                 logger.exception(
-                    "Could not record failure state for notification "
-                    "delivery %s",
+                    (
+                        "Could not record failure "
+                        "state for notification "
+                        "delivery %s"
+                    ),
                     delivery_id,
                 )
 
@@ -165,7 +204,11 @@ def process_pending_deliveries() -> dict:
 
 async def notification_loop(
     interval_seconds: int = 5,
-):
+) -> None:
+    """
+    Long-running notification delivery loop.
+    """
+
     interval_seconds = max(
         int(
             interval_seconds
@@ -175,8 +218,10 @@ async def notification_loop(
 
 
     logger.info(
-        "Notification worker started "
-        "(interval=%ss)",
+        (
+            "Notification worker started "
+            "(interval=%ss)"
+        ),
         interval_seconds,
     )
 
@@ -221,7 +266,10 @@ async def notification_loop(
 
 
             logger.exception(
-                "Unexpected notification worker error"
+                (
+                    "Unexpected notification "
+                    "worker error"
+                )
             )
 
 

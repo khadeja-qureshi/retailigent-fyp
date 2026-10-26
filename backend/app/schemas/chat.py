@@ -45,27 +45,43 @@ class ProductCarouselBlock(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Inventory / stock block
+# Inventory / location blocks
 # ---------------------------------------------------------------------------
 
 
 class BranchLocationItem(BaseModel):
     branch_id: str
+
     name: str
     city: str
+
     area: str | None = None
+
     address: str | None = None
+
     latitude: float | None = None
     longitude: float | None = None
+
+    distance_km: float | None = None
+
     phone: str | None = None
+
     opening_time: str | None = None
     closing_time: str | None = None
 
 
 class BranchMapBlock(BaseModel):
-    type: Literal["branch_map"] = "branch_map"
+    type: Literal[
+        "branch_map"
+    ] = "branch_map"
+
     title: str = "Store locations"
-    branches: list[BranchLocationItem] = Field(default_factory=list)
+
+    branches: list[
+        BranchLocationItem
+    ] = Field(
+        default_factory=list
+    )
 
 
 class StockBranchItem(BaseModel):
@@ -86,11 +102,15 @@ class StockBranchItem(BaseModel):
 
 
 class RecommendationBlock(BaseModel):
-    type: Literal["recommendation"] = "recommendation"
+    type: Literal[
+        "recommendation"
+    ] = "recommendation"
 
     title: str = "Recommended for you"
 
-    products: list[ProductCard] = Field(
+    products: list[
+        ProductCard
+    ] = Field(
         default_factory=list
     )
 
@@ -103,17 +123,16 @@ class StockStatusBlock(BaseModel):
     variant_id: str
 
     product_name: str | None = None
+
     sku: str | None = None
 
-    branches: list[StockBranchItem]
+    branches: list[
+        StockBranchItem
+    ]
 
 
 # ---------------------------------------------------------------------------
-# Existing Phase 6-10 blocks
-#
-# These wrappers deliberately preserve the payload shape already returned by
-# the existing services/APIs. We can therefore reuse the current frontend
-# components rather than duplicating commerce logic in the chat layer.
+# Existing Phase 6-10 commerce blocks
 # ---------------------------------------------------------------------------
 
 
@@ -122,7 +141,10 @@ class CartSummaryBlock(BaseModel):
         "cart_summary"
     ] = "cart_summary"
 
-    data: dict[str, Any]
+    data: dict[
+        str,
+        Any,
+    ]
 
 
 class WishlistBlock(BaseModel):
@@ -130,7 +152,10 @@ class WishlistBlock(BaseModel):
         "wishlist"
     ] = "wishlist"
 
-    data: dict[str, Any]
+    data: dict[
+        str,
+        Any,
+    ]
 
 
 class ReservationBlock(BaseModel):
@@ -138,7 +163,10 @@ class ReservationBlock(BaseModel):
         "reservation"
     ] = "reservation"
 
-    reservation: dict[str, Any]
+    reservation: dict[
+        str,
+        Any,
+    ]
 
 
 class SmartCartRuleBlock(BaseModel):
@@ -146,7 +174,10 @@ class SmartCartRuleBlock(BaseModel):
         "smart_cart_rule"
     ] = "smart_cart_rule"
 
-    rule: dict[str, Any]
+    rule: dict[
+        str,
+        Any,
+    ]
 
 
 class AlertBlock(BaseModel):
@@ -154,7 +185,10 @@ class AlertBlock(BaseModel):
         "alert"
     ] = "alert"
 
-    alert: dict[str, Any]
+    alert: dict[
+        str,
+        Any,
+    ]
 
 
 class OrderConfirmationBlock(BaseModel):
@@ -162,7 +196,10 @@ class OrderConfirmationBlock(BaseModel):
         "order_confirmation"
     ] = "order_confirmation"
 
-    order: dict[str, Any]
+    order: dict[
+        str,
+        Any,
+    ]
 
 
 class NotificationListBlock(BaseModel):
@@ -170,8 +207,10 @@ class NotificationListBlock(BaseModel):
         "notification_list"
     ] = "notification_list"
 
-    data: dict[str, Any]
-
+    data: dict[
+        str,
+        Any,
+    ]
 
 
 class SupportEscalationBlock(BaseModel):
@@ -180,6 +219,7 @@ class SupportEscalationBlock(BaseModel):
     ] = "support_escalation"
 
     ticket_id: str
+
     status: Literal[
         "open",
         "in_progress",
@@ -188,14 +228,16 @@ class SupportEscalationBlock(BaseModel):
         "resolved",
         "closed",
     ] = "open"
+
     subject: str
+
     message: str
 
 
 # ---------------------------------------------------------------------------
 # Discriminated union
 #
-# "type" is the discriminator shared with the frontend block dispatcher.
+# Every chat block uses the "type" field as the discriminator.
 # ---------------------------------------------------------------------------
 
 
@@ -231,9 +273,22 @@ class ChatRequest(BaseModel):
         max_length=4000,
     )
 
-    conversation_id: (
-        str | None
-    ) = None
+    conversation_id: str | None = None
+
+    # Optional browser location.
+    # These are only populated when the frontend
+    # has location permission and the query needs it.
+    latitude: float | None = Field(
+        default=None,
+        ge=-90,
+        le=90,
+    )
+
+    longitude: float | None = Field(
+        default=None,
+        ge=-180,
+        le=180,
+    )
 
 
 class ChatTurnResponse(BaseModel):
@@ -263,6 +318,7 @@ class ChatTurnResponse(BaseModel):
 
 class ExtractedEntities(BaseModel):
     product_name: str | None = None
+
     category: str | None = None
 
     variant_id: str | None = None
@@ -277,9 +333,7 @@ class ExtractedEntities(BaseModel):
     max_price: float | None = None
     target_price: float | None = None
 
-    min_discount_percentage: (
-        float | None
-    ) = None
+    min_discount_percentage: float | None = None
 
     quantity: int | None = None
 
@@ -290,7 +344,9 @@ class ExtractedEntities(BaseModel):
 
     ordinal_reference: int | None = None
 
-    ordinal_references: list[int] = Field(
+    ordinal_references: list[
+        int
+    ] = Field(
         default_factory=list
     )
 
@@ -310,12 +366,13 @@ class ParsedCustomerMessage(BaseModel):
         default_factory=ExtractedEntities
     )
 
-    context_used: dict[str, Any] = Field(
+    context_used: dict[
+        str,
+        Any,
+    ] = Field(
         default_factory=dict
     )
 
     requires_clarification: bool = False
 
-    clarification_question: (
-        str | None
-    ) = None
+    clarification_question: str | None = None
