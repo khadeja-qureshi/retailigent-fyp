@@ -1,3 +1,10 @@
+import asyncio
+
+from app.workers.job_state import get_job_states
+from app.workers.scheduler import (
+    RESERVATION_JOB_NAME,
+    reservation_scheduler_loop,
+)
 import os
 import time
 from datetime import (
@@ -426,3 +433,90 @@ def test_expired_reservation_releases_stock():
         cleanup_reservation(
             reservation_id
         )
+
+def test_scheduler_automatically_expires_reservation_and_restores_stock():
+    assert CUSTOMER_ID, "TEST_CUSTOMER_ID missing"
+    assert VARIANT_ID, "TEST_VARIANT_ID missing"
+
+    branch = get_active_test_branch(min_available=1)
+    branch_id = branch["branch_id"]
+    before = get_inventory_snapshot(branch_id)
+
+    expires_at = datetime.now(timezone.utc) + timedelta(seconds=2)
+    reservation_id = None
+
+    try:
+        response = supabase_admin.rpc(
+            "create_reservation",
+            {
+                "p_customer_id": CUSTOMER_ID,
+                "p_variant_id": VARIANT_ID,
+                "p_branch_id": branch_id,
+                "p_quantity": 1,
+                "p_expires_at": expires_at.isoformat(),
+            },
+        ).execute()
+
+        reservation_id = str(response.data)
+
+        after_create = get_inventory_snapshot(branch_id)
+        assert after_create["reserved_quantity"] == (
+            before["reserved_quantity"] + 1
+        )
+        assert after_create["available_quantity"] == (
+            before["available_quantity"] - 1
+        )
+
+        async def exercise_scheduler():
+            task = asyncio.create_task(
+                reservation_scheduler_loop(interval_seconds=1)
+            )
+
+            try:
+                loop = asyncio.get_running_loop()
+                deadline = loop.time() + 20
+
+                while loop.time() < deadline:
+                    job = get_job_states(
+                        expected_intervals={RESERVATION_JOB_NAME: 1},
+                        stale_multiplier=3,
+                    ).get(RESERVATION_JOB_NAME, {})
+
+                    reservation = get_reservation(reservation_id)
+                    inventory = get_inventory_snapshot(branch_id)
+
+                    if (
+                        job.get("success_count", 0) >= 1
+                        and reservation["status"] == "expired"
+                        and inventory == before
+                    ):
+                        return
+
+                    await asyncio.sleep(0.5)
+
+                raise AssertionError(
+                    "Scheduler did not expire the reservation and restore "
+                    "inventory within 20 seconds."
+                )
+            finally:
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
+
+        asyncio.run(exercise_scheduler())
+
+        assert get_reservation(reservation_id)["status"] == "expired"
+        assert get_inventory_snapshot(branch_id) == before
+
+        job = get_job_states(
+            expected_intervals={RESERVATION_JOB_NAME: 1},
+            stale_multiplier=3,
+        )[RESERVATION_JOB_NAME]
+
+        assert job["success_count"] >= 1
+        assert job["last_error"] is None
+
+    finally:
+        cleanup_reservation(reservation_id)
