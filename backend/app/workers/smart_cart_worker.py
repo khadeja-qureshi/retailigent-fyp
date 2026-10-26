@@ -1,9 +1,7 @@
-import asyncio
 import logging
 
 from app.agents.purchase_agent import purchase_agent
 from app.services.smart_cart_service import (
-    activate_due_promotions,
     list_triggered_auto_buy_rules,
 )
 
@@ -15,17 +13,13 @@ def process_pending_auto_buys():
     """
     Process all currently-triggered Auto Buy rules.
 
-    One failed rule must not stop the remaining rules.
+    One failed rule must not stop the remaining rules. Failing to fetch
+    the rules at all propagates, so the scheduler records the job as
+    failed (and backs off) instead of silently reporting success.
     """
     results = []
 
-    try:
-        rules = list_triggered_auto_buy_rules()
-    except Exception:
-        logger.exception(
-            "Failed to fetch triggered Smart Cart rules"
-        )
-        return results
+    rules = list_triggered_auto_buy_rules()
 
     for rule in rules:
         rule_id = rule.get("id")
@@ -47,62 +41,3 @@ def process_pending_auto_buys():
             )
 
     return results
-
-
-async def auto_buy_loop(
-    interval_seconds: int = 2,
-):
-    """
-    Continuous Smart Cart worker.
-
-    Important:
-    A temporary Supabase/network error must NOT
-    terminate the background worker permanently.
-    """
-    logger.info(
-        "Smart Cart worker started "
-        "(interval=%ss)",
-        interval_seconds,
-    )
-
-    while True:
-        try:
-            try:
-                activated_count = await asyncio.to_thread(
-                    activate_due_promotions
-                )
-
-                if activated_count:
-                    logger.info(
-                        "Activated %s due promotion event(s)",
-                        activated_count,
-                    )
-
-            except Exception:
-                # Promotion activation must not prevent
-                # already-triggered Auto Buy rules from
-                # being processed.
-                logger.exception(
-                    "Failed to activate due promotions"
-                )
-
-            await asyncio.to_thread(
-                process_pending_auto_buys
-            )
-
-        except asyncio.CancelledError:
-            logger.info(
-                "Smart Cart worker stopped"
-            )
-            raise
-
-        except Exception:
-            # Never allow one transient DB/network
-            # problem to kill the worker forever.
-            logger.exception(
-                "Unexpected Smart Cart worker error"
-            )
-
-        await asyncio.sleep(
-            interval_seconds
-        )
