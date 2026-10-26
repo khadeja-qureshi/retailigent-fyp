@@ -44,26 +44,113 @@ def test_worker_marks_sent_and_failed_independently(monkeypatch):
     monkeypatch.setattr(
         notification_worker,
         "fail_delivery",
-        lambda delivery_id, error: failed.append((delivery_id, error)),
+        lambda delivery_id, error, permanent=False: failed.append(
+            (delivery_id, error, permanent)
+        ),
     )
 
     summary = notification_worker.process_pending_deliveries()
 
-    assert summary == {"sent": 2, "failed": 1}
+    assert summary == {"sent": 2, "failed": 1, "dead_lettered": 0}
     assert completed == ["d1", "d3"]
-    assert failed == [("d2", "smtp down")]
+    assert failed == [("d2", "smtp down", False)]
 
 
-def test_worker_survives_claim_failure(monkeypatch):
+def test_worker_dead_letters_permanent_errors_immediately(monkeypatch):
+    failed = []
+
+    def fake_deliver(delivery):
+        if delivery["id"] == "d1":
+            raise notification_service.PermanentDeliveryError(
+                "Customer has no email address"
+            )
+
+    monkeypatch.setattr(
+        notification_worker,
+        "claim_deliveries",
+        lambda: [
+            {"id": "d1", "notification_id": "n1", "channel": "email"},
+            {"id": "d2", "notification_id": "n2", "channel": "in_app"},
+        ],
+    )
+    monkeypatch.setattr(notification_worker, "deliver", fake_deliver)
+    monkeypatch.setattr(notification_worker, "complete_delivery", lambda _id: None)
+    monkeypatch.setattr(
+        notification_worker,
+        "fail_delivery",
+        lambda delivery_id, error, permanent=False: failed.append(
+            (delivery_id, error, permanent)
+        ),
+    )
+
+    summary = notification_worker.process_pending_deliveries()
+
+    assert summary == {"sent": 1, "failed": 1, "dead_lettered": 1}
+    assert failed == [("d1", "Customer has no email address", True)]
+
+
+def test_worker_survives_failure_to_record_failure(monkeypatch):
+    monkeypatch.setattr(
+        notification_worker,
+        "claim_deliveries",
+        lambda: [{"id": "d1", "notification_id": "n1", "channel": "in_app"}],
+    )
+    monkeypatch.setattr(
+        notification_worker,
+        "deliver",
+        lambda _d: (_ for _ in ()).throw(RuntimeError("boom")),
+    )
+
+    def broken_fail(*args, **kwargs):
+        raise RuntimeError("db down")
+
+    monkeypatch.setattr(notification_worker, "fail_delivery", broken_fail)
+
+    summary = notification_worker.process_pending_deliveries()
+
+    assert summary["failed"] == 1
+
+
+def test_claim_failure_propagates_so_the_scheduler_can_record_it(monkeypatch):
     def boom():
         raise RuntimeError("db unreachable")
 
     monkeypatch.setattr(notification_worker, "claim_deliveries", boom)
 
-    assert notification_worker.process_pending_deliveries() == {
-        "sent": 0,
-        "failed": 0,
-    }
+    with pytest.raises(RuntimeError):
+        notification_worker.process_pending_deliveries()
+
+
+def test_fail_delivery_sends_permanence_and_attempt_limit(monkeypatch):
+    calls = []
+
+    class FakeRpc:
+        def execute(self):
+            return None
+
+    class FakeClient:
+        def rpc(self, name, params):
+            calls.append((name, params))
+            return FakeRpc()
+
+    monkeypatch.setattr(notification_service, "supabase_admin", FakeClient())
+    monkeypatch.setattr(
+        notification_service.settings, "notification_max_attempts", 4
+    )
+
+    notification_service.fail_delivery("d1", "boom", permanent=True)
+
+    assert calls == [
+        (
+            "fail_notification_delivery",
+            {
+                "p_delivery_id": "d1",
+                "p_error": "boom",
+                "p_permanent": True,
+                "p_max_attempts": 4,
+            },
+        )
+    ]
 
 
 def test_email_without_opt_in_is_skipped_not_sent(monkeypatch):

@@ -43,49 +43,27 @@ from contextlib import (
     suppress,
 )
 
-from app.workers.smart_cart_worker import (
-    auto_buy_loop,
-)
-from app.workers.notification_worker import (
-    notification_loop,
-)
+from app.core.logging_config import configure_logging
+from app.workers.jobs import build_scheduler
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    tasks = []
+    configure_logging(settings.log_format, settings.log_level)
 
-    if settings.smart_cart_worker_enabled:
-        tasks.append(
-            asyncio.create_task(
-                auto_buy_loop(
-                    settings
-                    .smart_cart_worker_interval_seconds
-                )
-            )
-        )
+    # Phase 17: one scheduler owns every background job
+    # (promotions, reservation expiry, notifications, Smart Cart auto-buy).
+    scheduler = build_scheduler(settings)
+    app.state.scheduler = scheduler
 
-    if settings.notification_worker_enabled:
-        tasks.append(
-            asyncio.create_task(
-                notification_loop(
-                    settings
-                    .notification_worker_interval_seconds
-                )
-            )
-        )
+    if scheduler is not None:
+        scheduler.start()
 
     try:
         yield
 
     finally:
-        for task in tasks:
-            task.cancel()
-
-        for task in tasks:
-            with suppress(
-                asyncio.CancelledError
-            ):
-                await task
+        if scheduler is not None:
+            await scheduler.stop()
 
 app = FastAPI(
     title="Retailigent API",
@@ -188,3 +166,12 @@ app.include_router(support_router)
 from app.api.v1.audit import router as audit_router
 
 app.include_router(audit_router)
+
+
+from app.api.v1.jobs import (
+    health_router,
+    router as jobs_router,
+)
+
+app.include_router(health_router)
+app.include_router(jobs_router)

@@ -27,6 +27,16 @@ class Settings(BaseSettings):
     notification_backoff_seconds: int = 30
     notification_stale_processing_seconds: int = 300
 
+    # Phase 17 - Scheduler. An interval of 0 disables that single job.
+    scheduler_enabled: bool = True
+    promotion_activation_interval_seconds: int = 60
+    reservation_expiry_interval_seconds: int = 30
+    job_heartbeat_persist_seconds: int = 15
+
+    # Phase 17 - Structured logging ("json" or "text")
+    log_format: str = "json"
+    log_level: str = "INFO"
+
     # Phase 12 - Cross-conversation memory
     memory_stale_days: int = 90
     memory_stale_confidence_multiplier: float = 0.5

@@ -193,6 +193,14 @@ def send_email(to_address: str, subject: str, body: str) -> None:
     )
 
 
+class PermanentDeliveryError(ValueError):
+    """
+    A delivery that can never succeed (missing record, no email address,
+    unsupported channel). It is dead-lettered at once instead of being
+    retried. Subclasses ValueError so older callers keep working.
+    """
+
+
 def deliver(delivery: dict) -> None:
     """
     Deliver one claimed delivery row.
@@ -201,7 +209,7 @@ def deliver(delivery: dict) -> None:
     notification = _get_notification(str(delivery["notification_id"]))
 
     if notification is None:
-        raise ValueError("Notification no longer exists")
+        raise PermanentDeliveryError("Notification no longer exists")
 
     channel = delivery["channel"]
 
@@ -225,7 +233,7 @@ def deliver(delivery: dict) -> None:
         address = _get_customer_email(customer_id)
 
         if not address:
-            raise ValueError("Customer has no email address")
+            raise PermanentDeliveryError("Customer has no email address")
 
         send_email(
             address,
@@ -234,7 +242,7 @@ def deliver(delivery: dict) -> None:
         )
         return
 
-    raise ValueError(f"Unsupported channel: {channel}")
+    raise PermanentDeliveryError(f"Unsupported channel: {channel}")
 
 
 def complete_delivery(delivery_id: str) -> None:
@@ -244,10 +252,25 @@ def complete_delivery(delivery_id: str) -> None:
     ).execute()
 
 
-def fail_delivery(delivery_id: str, error: str) -> None:
+def fail_delivery(
+    delivery_id: str,
+    error: str,
+    permanent: bool = False,
+) -> None:
+    """
+    Record a failed delivery. The database retries it with backoff until
+    `notification_max_attempts`, then dead-letters it. `permanent=True`
+    dead-letters immediately.
+    """
+
     supabase_admin.rpc(
         "fail_notification_delivery",
-        {"p_delivery_id": delivery_id, "p_error": error},
+        {
+            "p_delivery_id": delivery_id,
+            "p_error": error,
+            "p_permanent": permanent,
+            "p_max_attempts": settings.notification_max_attempts,
+        },
     ).execute()
 
 

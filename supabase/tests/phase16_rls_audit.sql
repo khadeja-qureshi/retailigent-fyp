@@ -245,7 +245,7 @@ create table p16_test.staff_only (tbl text primary key);
 insert into p16_test.staff_only values
  ('audit_logs'), ('branch_inventory'), ('demand_signals'), ('inventory_movements'),
  ('notification_deliveries'), ('price_history'), ('promotions'), ('purchase_attempts'),
- ('retail_events'), ('agent_registry');
+ ('retail_events'), ('agent_registry'), ('job_runs');
 
 create table p16_test.catalog (tbl text primary key);   -- intentionally world-readable
 insert into p16_test.catalog values
