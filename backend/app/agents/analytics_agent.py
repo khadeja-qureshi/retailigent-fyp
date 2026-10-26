@@ -1331,17 +1331,18 @@ class AnalyticsAgent:
 
         if not parts:
             return (
-                "Analytics records were retrieved, "
-                "but the current data shape does "
-                "not provide enough structured "
-                "information to answer that "
-                "question reliably."
+                "I retrieved analytics records, but "
+                "couldn't generate a summary from the "
+                "language model. The current structured "
+                "data does not provide enough information "
+                "to answer that question reliably."
             )
 
         return (
-            "I could not generate a "
-            "natural-language model summary, "
-            "but the retrieved data is available. "
+            "I retrieved analytics records, but "
+            "couldn't generate a summary from the "
+            "language model. The retrieved data is still "
+            "available: "
             + " ".join(
                 parts
             )
