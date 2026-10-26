@@ -77,6 +77,92 @@ logger = logging.getLogger(
 )
 
 
+def _extract_stock_requested_quantity(
+    message: str,
+    parsed: ParsedCustomerMessage,
+) -> int | None:
+    """
+    Extract the requested quantity specifically for stock-check questions.
+
+    Examples supported:
+        Do you have 500 of the second kurta in stock?
+        Do you have 25 units of this?
+        Is quantity 40 available?
+        500 of the first shirt
+
+    Structured parser quantity is preferred when available.
+
+    The fallback patterns deliberately avoid ordinal references such as
+    "second", so "500 of the second kurta" resolves quantity=500 rather
+    than quantity=2.
+    """
+
+    if parsed.entities.quantity is not None:
+        try:
+            quantity = int(
+                parsed.entities.quantity
+            )
+
+        except (
+            TypeError,
+            ValueError,
+        ):
+            quantity = 0
+
+        if quantity > 0:
+            return quantity
+
+    text = re.sub(
+        r"\s+",
+        " ",
+        message
+        .strip()
+        .casefold(),
+    )
+
+    patterns = (
+        # "do you have 500 of ..."
+        r"\b(?:have|has)\s+(\d+)\b",
+
+        # "500 units / 500 pieces / 500 items"
+        r"\b(\d+)\s+"
+        r"(?:units?|pieces?|items?|pcs?)\b",
+
+        # "quantity 500" / "qty: 500"
+        r"\b(?:quantity|qty)\s*"
+        r"(?:is|=|:)?\s*(\d+)\b",
+
+        # "500 of the second kurta"
+        r"\b(\d+)\s+of\b",
+    )
+
+    for pattern in patterns:
+        match = re.search(
+            pattern,
+            text,
+            flags=re.IGNORECASE,
+        )
+
+        if not match:
+            continue
+
+        try:
+            quantity = int(
+                match.group(1)
+            )
+
+        except (
+            TypeError,
+            ValueError,
+        ):
+            continue
+
+        if quantity > 0:
+            return quantity
+
+    return None
+
+
 def _looks_like_feedback(message: str) -> bool:
     text = re.sub(r"\s+", " ", message.strip().casefold())
 
@@ -1624,6 +1710,13 @@ class OrchestratorAgent:
                     .branch_name
                 )
 
+                requested_quantity = (
+                    _extract_stock_requested_quantity(
+                        message,
+                        parsed,
+                    )
+                )
+
                 for variant_id, inventory in zip(
                     variant_ids,
                     inventory_results,
@@ -1633,42 +1726,131 @@ class OrchestratorAgent:
                         continue
 
                     relevant_rows = []
+
                     for row in inventory:
-                        branch = row.get("branch") or {}
+                        branch = (
+                            row.get("branch")
+                            or {}
+                        )
+
                         if not branch:
                             continue
 
                         if (
                             requested_branch
-                            and str(branch.get("name") or "").strip().lower()
-                            != requested_branch.strip().lower()
+                            and
+                            str(
+                                branch.get("name")
+                                or ""
+                            )
+                            .strip()
+                            .lower()
+                            !=
+                            requested_branch
+                            .strip()
+                            .lower()
                         ):
                             continue
 
-                        relevant_rows.append(row)
-
-                    if (
-                        relevant_rows
-                        and all(
-                            int(row.get("available_quantity") or 0) <= 0
-                            for row in relevant_rows
+                        relevant_rows.append(
+                            row
                         )
-                    ):
+
+                    if not relevant_rows:
+                        continue
+
+                    available_quantity = sum(
+                        max(
+                            0,
+                            int(
+                                row.get(
+                                    "available_quantity"
+                                )
+                                or 0
+                            ),
+                        )
+                        for row
+                        in relevant_rows
+                    )
+
+                    stock_is_insufficient = (
+                        available_quantity <= 0
+                        or (
+                            requested_quantity
+                            is not None
+                            and
+                            requested_quantity
+                            > available_quantity
+                        )
+                    )
+
+                    if stock_is_insufficient:
+                        metadata = {
+                            "requested_branch":
+                                requested_branch,
+
+                            "checked_branch_count":
+                                len(
+                                    relevant_rows
+                                ),
+
+                            "available_quantity":
+                                available_quantity,
+
+                            "source":
+                                "stock_check",
+                        }
+
+                        if (
+                            requested_quantity
+                            is not None
+                        ):
+                            metadata[
+                                "requested_quantity"
+                            ] = (
+                                requested_quantity
+                            )
+
+                            metadata[
+                                "shortfall_quantity"
+                            ] = max(
+                                0,
+                                requested_quantity
+                                -
+                                available_quantity,
+                            )
+
                         record_demand_signal(
-                            signal_type="insufficient_stock",
-                            customer_id=customer_id,
-                            variant_id=variant_id,
+                            signal_type=(
+                                "insufficient_stock"
+                            ),
+                            customer_id=(
+                                customer_id
+                            ),
+                            variant_id=(
+                                variant_id
+                            ),
                             branch_id=(
-                                str(relevant_rows[0].get("branch_id"))
-                                if requested_branch
-                                and relevant_rows[0].get("branch_id") is not None
+                                str(
+                                    relevant_rows[
+                                        0
+                                    ].get(
+                                        "branch_id"
+                                    )
+                                )
+                                if (
+                                    requested_branch
+                                    and
+                                    relevant_rows[
+                                        0
+                                    ].get(
+                                        "branch_id"
+                                    )
+                                    is not None
+                                )
                                 else None
                             ),
-                            metadata={
-                                "requested_branch": requested_branch,
-                                "checked_branch_count": len(relevant_rows),
-                                "source": "stock_check",
-                            },
+                            metadata=metadata,
                         )
 
                 stock_blocks = [
