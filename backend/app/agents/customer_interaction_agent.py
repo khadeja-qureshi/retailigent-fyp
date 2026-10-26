@@ -811,45 +811,276 @@ def extract_entities(
 def classify_intent(
     message: str,
 ) -> str:
-    text = _normalize(message)
+    text = _normalize(
+        message
+    )
 
-    if _contains_any(
-        text,
-        {
-            "customer support",
-            "customer service",
-            "talk to a human",
-            "speak to a human",
-            "human agent",
-            "live agent",
-            "file a complaint",
-            "make a complaint",
-            "i want to complain",
-            "complaint",
-            "complain",
-            "refund",
-            "wrong item",
-            "damaged item",
-            "broken item",
-            "order delayed",
-            "order late",
-            "delivery delayed",
-            "late delivery",
-            "not received my order",
-            "never received",
-            "poor service",
-            "bad experience",
-            "not satisfied",
-            "shikayat",
-            "complaint karni",
-            "masla hal",
-            "customer service se baat",
-            "insan se baat",
-            "insaan se baat",
-            "support chahiye",
-        },
+    support_phrase_match = (
+        _contains_any(
+            text,
+            {
+                "customer support",
+                "customer service",
+                "talk to a human",
+                "speak to a human",
+                "human agent",
+                "live agent",
+
+                "file a complaint",
+                "make a complaint",
+                "i want to complain",
+                "complaint",
+                "complain",
+
+                "refund",
+                "wrong item",
+                "damaged item",
+                "broken item",
+
+                "order delayed",
+                "order late",
+                "delivery delayed",
+                "late delivery",
+
+                "not received my order",
+                "never received",
+
+                "poor service",
+                "bad experience",
+                "not satisfied",
+
+                "help with my order",
+                "help me with my order",
+                "need help with my order",
+
+                "shikayat",
+                "complaint karni",
+                "masla hal",
+
+                "customer service se baat",
+                "insan se baat",
+                "insaan se baat",
+
+                "support chahiye",
+                "help chahiye",
+
+                "damaged mila",
+                "damaged item mila",
+                "item damaged hai",
+
+                "order nahi aya",
+                "order nahi aaya",
+                "order abhi tak nahi aya",
+                "order abhi tak nahi aaya",
+
+                "delivery nahi ayi",
+                "delivery nahi aayi",
+
+                "koi help nahi kar raha",
+                "koi madad nahi kar raha",
+                "my issue",
+"my complaint",
+"my ticket",
+"support ticket",
+"ticket status",
+"ticket update",
+"complaint status",
+"complaint update",
+"issue status",
+"issue update",
+
+"looked at my issue",
+"looked at my complaint",
+"looked at my ticket",
+
+"any update on my issue",
+"any update on my complaint",
+"any update on my ticket",
+
+"what happened to my issue",
+"what happened to my complaint",
+"what happened to my ticket",
+
+"what is happening with my issue",
+"what is happening with my complaint",
+"what is happening with my ticket",
+
+"has support replied",
+"has anyone replied",
+"has anyone looked",
+
+"meri complaint",
+"mera ticket",
+"mere ticket",
+"meri shikayat",
+
+"complaint ka kya hua",
+"ticket ka kya hua",
+"issue ka kya hua",
+
+"complaint ka update",
+"ticket ka update",
+"issue ka update",
+            },
+        )
+    )
+
+    support_pattern_match = any(
+        re.search(
+            pattern,
+            text,
+            flags=re.IGNORECASE,
+        )
+        for pattern in (
+            # ------------------------------------------------------
+            # Natural English late/delayed order wording:
+            #
+            # "my order is extremely late"
+            # "the order is very late"
+            # "my order has been delayed"
+            # ------------------------------------------------------
+            (
+                r"\b"
+                r"(?:my\s+|the\s+)?"
+                r"order\b"
+                r".{0,80}?"
+                r"\b"
+                r"(?:late|delayed|delay)"
+                r"\b"
+            ),
+
+            # ------------------------------------------------------
+            # Delivery variants:
+            #
+            # "my delivery is very late"
+            # "delivery has been delayed"
+            # ------------------------------------------------------
+            (
+                r"\b"
+                r"(?:my\s+|the\s+)?"
+                r"delivery\b"
+                r".{0,80}?"
+                r"\b"
+                r"(?:late|delayed|delay)"
+                r"\b"
+            ),
+
+            # ------------------------------------------------------
+            # Roman Urdu:
+            #
+            # "mera order bohat late hai"
+            # "mera order late ho gaya"
+            # ------------------------------------------------------
+            (
+                r"\b"
+                r"(?:mera|meri)\s+"
+                r"order\b"
+                r".{0,80}?"
+                r"\b"
+                r"(?:late|delay|delayed)"
+                r"\b"
+            ),
+
+            # ------------------------------------------------------
+            # Roman Urdu missing-order variants:
+            #
+            # "mera order nahi aya"
+            # "mera order abhi tak nahi aaya"
+            # ------------------------------------------------------
+            (
+                r"\b"
+                r"(?:mera|meri)\s+"
+                r"order\b"
+                r".{0,80}?"
+                r"\b"
+                r"nahi\s+"
+                r"(?:aya|aaya|pohncha|pohcha)"
+                r"\b"
+            ),
+
+            # ------------------------------------------------------
+            # Help + order:
+            #
+            # "I need help with my order"
+            # "help me regarding my order"
+            # ------------------------------------------------------
+            (
+                r"\b"
+                r"(?:help|support)"
+                r"\b"
+                r".{0,60}?"
+                r"\border\b"
+            ),
+
+            # ------------------------------------------------------
+            # Order + help:
+            #
+            # "my order has a problem, please help"
+            # ------------------------------------------------------
+            (
+                r"\border\b"
+                r".{0,80}?"
+                r"\b"
+                r"(?:help|support)"
+                r"\b"
+            ),
+
+            # ------------------------------------------------------
+            # Roman Urdu lack-of-help complaint:
+            #
+            # "koi help nahi kar raha"
+            # "koi madad nahi kar raha"
+            # ------------------------------------------------------
+            (
+                r"\b"
+                r"(?:help|madad)"
+                r"\b"
+                r".{0,40}?"
+                r"\bnahi\b"
+            ),
+
+            (
+    r"\b"
+    r"(?:my\s+)?"
+    r"(?:issue|complaint|ticket)"
+    r"\b"
+    r".{0,80}?"
+    r"\b"
+    r"(?:update|status|looked|reviewed|replied)"
+    r"\b"
+),
+
+(
+    r"\b"
+    r"(?:update|status)"
+    r"\b"
+    r".{0,60}?"
+    r"\b"
+    r"(?:issue|complaint|ticket)"
+    r"\b"
+),
+
+(
+    r"\b"
+    r"(?:complaint|ticket|issue)"
+    r"\s+ka\s+"
+    r"(?:kya\s+hua|update|status)"
+    r"\b"
+),
+        )
+    )
+
+    if (
+        support_phrase_match
+        or
+        support_pattern_match
     ):
         return "support_request"
+
+    # --------------------------------------------------------------
+    # KEEP THE REST OF YOUR EXISTING classify_intent()
+    # CODE BELOW THIS POINT EXACTLY AS IT IS.
+    # --------------------------------------------------------------
 
     if _contains_any(
         text,
