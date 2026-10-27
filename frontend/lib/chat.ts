@@ -336,6 +336,25 @@ export async function getConversationHistory(
 }
 
 
+export async function deleteConversation(
+  conversationId: string
+): Promise<void> {
+  await authenticatedJson<{
+    id: string;
+    deleted: boolean;
+  }>(
+    "/api/v1/chat/conversations/"
+    +
+    encodeURIComponent(
+      conversationId
+    ),
+    {
+      method: "DELETE",
+    }
+  );
+}
+
+
 export async function finalizeConversation(
   conversationId: string
 ): Promise<void> {

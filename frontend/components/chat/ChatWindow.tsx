@@ -28,13 +28,10 @@ const SUGGESTIONS = [
 
 
 function conversationLabel(
-  conversation:
-    ConversationSummary
+  conversation: ConversationSummary
 ) {
   const title =
-    conversation
-      .title
-      ?.trim();
+    conversation.title?.trim();
 
   if (title) {
     return title;
@@ -55,9 +52,7 @@ function conversationDate(
   }
 
   const date =
-    new Date(
-      value
-    );
+    new Date(value);
 
   if (
     Number.isNaN(
@@ -70,11 +65,8 @@ function conversationDate(
   return date.toLocaleDateString(
     undefined,
     {
-      month:
-        "short",
-
-      day:
-        "numeric",
+      month: "short",
+      day: "numeric",
     }
   );
 }
@@ -101,8 +93,36 @@ interface ConversationHistoryProps {
       conversationId: string
     ) => void;
 
+  onDelete:
+    (
+      conversationId: string
+    ) => void;
+
+  deletingConversationId:
+    string | null;
+
   onClose?:
     () => void;
+}
+
+
+function DeleteIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+      className="h-4 w-4"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M9 3h6m-8 4h10m-9 0 .7 12h6.6L16 7M10 10v6m4-6v6"
+      />
+    </svg>
+  );
 }
 
 
@@ -113,6 +133,8 @@ function ConversationHistory({
   isHistoryLoading,
   onNew,
   onSelect,
+  onDelete,
+  deletingConversationId,
   onClose,
 }: ConversationHistoryProps) {
   return (
@@ -181,8 +203,7 @@ function ConversationHistory({
             : (
               <div className="mt-2 space-y-1">
                 {
-                  conversations.length
-                  === 0
+                  conversations.length === 0
                     ? (
                       <p className="px-2 py-4 text-sm leading-6 text-white/60">
                         Your previous chats will appear here.
@@ -198,27 +219,19 @@ function ConversationHistory({
                             ===
                             conversationId;
 
+                          const deleting =
+                            deletingConversationId
+                            ===
+                            conversation.id;
+
                           return (
-                            <button
+                            <div
                               key={
                                 conversation.id
                               }
-                              type="button"
-                              disabled={
-                                isBusy
-                              }
-                              onClick={() => {
-                                onSelect(
-                                  conversation.id
-                                );
-                              }}
                               className={
                                 (
-                                  "w-full rounded-xl "
-                                  +
-                                  "px-3 py-3 "
-                                  +
-                                  "text-left transition "
+                                  "group flex items-stretch rounded-xl transition "
                                 )
                                 +
                                 (
@@ -226,9 +239,7 @@ function ConversationHistory({
                                     ? (
                                       "bg-[#7779de] "
                                       +
-                                      "text-white "
-                                      +
-                                      "shadow-sm"
+                                      "text-white shadow-sm"
                                     )
                                     : (
                                       "text-white/85 "
@@ -238,26 +249,102 @@ function ConversationHistory({
                                 )
                               }
                             >
-                              <div className="truncate text-sm font-medium">
-                                {
-                                  conversationLabel(
-                                    conversation
-                                  )
+                              <button
+                                type="button"
+                                disabled={
+                                  isBusy
+                                  || deleting
                                 }
-                              </div>
+                                onClick={() => {
+                                  onSelect(
+                                    conversation.id
+                                  );
+                                }}
+                                className="min-w-0 flex-1 rounded-l-xl px-3 py-3 text-left disabled:cursor-not-allowed disabled:opacity-50"
+                              >
+                                <div className="truncate text-sm font-medium">
+                                  {
+                                    conversationLabel(
+                                      conversation
+                                    )
+                                  }
+                                </div>
 
-                              <div className="mt-1 text-[11px] text-white/55">
-                                {
-                                  conversationDate(
+                                <div className="mt-1 text-[11px] text-white/55">
+                                  {
+                                    conversationDate(
+                                      conversation.updated_at
+                                      ??
+                                      conversation.created_at
+                                    )
+                                  }
+                                </div>
+                              </button>
+
+
+                              <button
+                                type="button"
+                                disabled={
+                                  isBusy
+                                  || deleting
+                                }
+                                onClick={(
+                                  event
+                                ) => {
+                                  event.stopPropagation();
+
+                                  const confirmed =
+                                    window.confirm(
+                                      "Delete this conversation permanently?"
+                                    );
+
+                                  if (confirmed) {
+                                    onDelete(
+                                      conversation.id
+                                    );
+                                  }
+                                }}
+                                aria-label={
+                                  `Delete ${conversationLabel(
                                     conversation
-                                      .updated_at
-                                    ??
-                                    conversation
-                                      .created_at
+                                  )}`
+                                }
+                                title="Delete conversation"
+                                className={
+                                  (
+                                    "flex w-11 shrink-0 items-center justify-center "
+                                    +
+                                    "rounded-r-xl text-white/70 transition "
+                                    +
+                                    "hover:bg-red-500/25 hover:text-red-100 "
+                                    +
+                                    "focus-visible:outline-none "
+                                    +
+                                    "focus-visible:ring-2 "
+                                    +
+                                    "focus-visible:ring-white/60 "
+                                  )
+                                  +
+                                  (
+                                    deleting
+                                      ? "opacity-100"
+                                      : "opacity-100"
                                   )
                                 }
-                              </div>
-                            </button>
+                              >
+                                {
+                                  deleting
+                                    ? (
+                                      <span className="text-[10px] font-semibold uppercase tracking-wide">
+                                        ...
+                                      </span>
+                                    )
+                                    : (
+                                      <DeleteIcon />
+                                    )
+                                }
+                              </button>
+                            </div>
                           );
                         }
                       )
@@ -295,6 +382,8 @@ export default function ChatWindow() {
     newConversation,
 
     loadConversation,
+
+    deleteConversation,
   } =
     useChat();
 
@@ -311,6 +400,15 @@ export default function ChatWindow() {
     setHistoryOpen,
   ] =
     useState(false);
+
+
+  const [
+    deletingConversationId,
+    setDeletingConversationId,
+  ] =
+    useState<string | null>(
+      null
+    );
 
 
   const bottomRef =
@@ -377,7 +475,10 @@ export default function ChatWindow() {
   const isBusy =
     isSending
     ||
-    isHistoryLoading;
+    isHistoryLoading
+    ||
+    deletingConversationId
+      !== null;
 
 
   async function submitMessage(
@@ -431,6 +532,45 @@ export default function ChatWindow() {
   }
 
 
+  async function handleDeleteConversation(
+    targetConversationId:
+      string
+  ) {
+    if (
+      deletingConversationId
+      !== null
+    ) {
+      return;
+    }
+
+    setDeletingConversationId(
+      targetConversationId
+    );
+
+    try {
+      const deleted =
+        await deleteConversation(
+          targetConversationId
+        );
+
+      if (deleted) {
+        setInput("");
+
+        if (
+          targetConversationId
+          === conversationId
+        ) {
+          setHistoryOpen(false);
+        }
+      }
+    } finally {
+      setDeletingConversationId(
+        null
+      );
+    }
+  }
+
+
   function handleSubmit(
     event:
       FormEvent
@@ -468,6 +608,7 @@ export default function ChatWindow() {
     <main className="retailigent-chat min-h-[calc(100dvh-4rem)] overflow-x-hidden bg-[#f1e6de] text-[#2c1c20]">
       <div className="mx-auto flex min-h-[calc(100dvh-4rem)] w-full max-w-[1500px]">
 
+        {/* Desktop conversation history */}
         <aside className="hidden w-72 shrink-0 border-r border-white/10 bg-[#7f2a3c] text-[#f1e6de] lg:block">
           <div className="sticky top-16 h-[calc(100dvh-4rem)] overflow-y-auto p-4">
             <ConversationHistory
@@ -493,11 +634,22 @@ export default function ChatWindow() {
                   selectedConversationId
                 );
               }}
+              onDelete={(
+                targetConversationId
+              ) => {
+                void handleDeleteConversation(
+                  targetConversationId
+                );
+              }}
+              deletingConversationId={
+                deletingConversationId
+              }
             />
           </div>
         </aside>
 
 
+        {/* Mobile conversation history */}
         {
           historyOpen
           && (
@@ -537,6 +689,16 @@ export default function ChatWindow() {
                       selectedConversationId
                     );
                   }}
+                  onDelete={(
+                    targetConversationId
+                  ) => {
+                    void handleDeleteConversation(
+                      targetConversationId
+                    );
+                  }}
+                  deletingConversationId={
+                    deletingConversationId
+                  }
                   onClose={() => {
                     setHistoryOpen(
                       false
@@ -550,6 +712,8 @@ export default function ChatWindow() {
 
 
         <section className="flex min-w-0 flex-1 flex-col">
+
+          {/* Chat header */}
           <header className="border-b border-[#dccbc4] bg-[#fffaf7]/90 px-4 py-4 backdrop-blur sm:px-6 sm:py-5 lg:px-8">
             <div className="mx-auto max-w-5xl">
               <div className="flex items-start justify-between gap-3">
@@ -594,6 +758,7 @@ export default function ChatWindow() {
                     </span>
                   </button>
 
+
                   <button
                     type="button"
                     disabled={
@@ -621,6 +786,7 @@ export default function ChatWindow() {
           </header>
 
 
+          {/* Messages */}
           <section className="min-h-0 flex-1 px-3 sm:px-6 lg:px-8">
             <div className="mx-auto flex min-h-[50vh] max-w-5xl flex-col py-4 sm:py-6">
               {
@@ -630,92 +796,93 @@ export default function ChatWindow() {
                       Restoring your conversation...
                     </div>
                   )
-                  : messages.length === 0
-                  ? (
-                    <div className="my-auto py-8 text-center sm:py-12">
-                      <div className="mx-auto max-w-2xl">
-                        <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-[#7f2a3c] text-lg font-bold text-[#f1e6de] shadow-sm">
-                          R
-                        </div>
+                  : messages.length
+                    === 0
+                    ? (
+                      <div className="my-auto py-8 text-center sm:py-12">
+                        <div className="mx-auto max-w-2xl">
+                          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-[#7f2a3c] text-lg font-bold text-[#f1e6de] shadow-sm">
+                            R
+                          </div>
 
-                        <h2 className="mt-5 text-xl font-bold sm:text-2xl">
-                          What are you looking for today?
-                        </h2>
+                          <h2 className="mt-5 text-xl font-bold sm:text-2xl">
+                            What are you looking for today?
+                          </h2>
 
-                        <p className="mt-3 text-sm leading-6 text-[#756369] sm:text-base">
-                          Speak naturally in English,
-                          Roman Urdu, or mix both.
-                        </p>
+                          <p className="mt-3 text-sm leading-6 text-[#756369] sm:text-base">
+                            Speak naturally in English,
+                            Roman Urdu, or mix both.
+                          </p>
 
 
-                        <div className="mt-6 grid gap-2.5 sm:mt-8 sm:grid-cols-2 sm:gap-3">
-                          {
-                            SUGGESTIONS.map(
-                              (
-                                suggestion
-                              ) => (
-                                <button
-                                  key={
-                                    suggestion
-                                  }
-                                  type="button"
-                                  disabled={
-                                    isBusy
-                                  }
-                                  onClick={() => {
-                                    void submitMessage(
+                          <div className="mt-6 grid gap-2.5 sm:mt-8 sm:grid-cols-2 sm:gap-3">
+                            {
+                              SUGGESTIONS.map(
+                                (
+                                  suggestion
+                                ) => (
+                                  <button
+                                    key={
                                       suggestion
-                                    );
-                                  }}
-                                  className="min-h-12 rounded-2xl border border-[#dccbc4] bg-[#fffaf7] p-3.5 text-left text-sm leading-5 text-[#2c1c20] shadow-sm transition hover:-translate-y-0.5 hover:border-[#ce4d42] hover:shadow-md disabled:opacity-50 sm:p-4"
-                                >
-                                  {
-                                    suggestion
-                                  }
-                                </button>
+                                    }
+                                    type="button"
+                                    disabled={
+                                      isBusy
+                                    }
+                                    onClick={() => {
+                                      void submitMessage(
+                                        suggestion
+                                      );
+                                    }}
+                                    className="min-h-12 rounded-2xl border border-[#dccbc4] bg-[#fffaf7] p-3.5 text-left text-sm leading-5 text-[#2c1c20] shadow-sm transition hover:-translate-y-0.5 hover:border-[#ce4d42] hover:shadow-md disabled:opacity-50 sm:p-4"
+                                  >
+                                    {
+                                      suggestion
+                                    }
+                                  </button>
+                                )
                               )
-                            )
-                          }
+                            }
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  )
-                  : (
-                    <div className="space-y-4 sm:space-y-5">
-                      {
-                        messages.map(
-                          (
-                            message
-                          ) => (
-                            <MessageBubble
-                              key={
-                                message.id
-                              }
-                              message={
-                                message
-                              }
-                            />
+                    )
+                    : (
+                      <div className="space-y-4 sm:space-y-5">
+                        {
+                          messages.map(
+                            (
+                              message
+                            ) => (
+                              <MessageBubble
+                                key={
+                                  message.id
+                                }
+                                message={
+                                  message
+                                }
+                              />
+                            )
                           )
-                        )
-                      }
+                        }
 
 
-                      {
-                        isSending
-                        &&
-                        !hasStreamingAssistant
-                        && (
-                          <div className="flex justify-start">
-                            <div className="max-w-[92%] rounded-2xl rounded-bl-md border border-[#dccbc4] bg-[#fffaf7] px-4 py-3 text-sm text-[#756369] shadow-sm sm:max-w-md">
-                              <span className="animate-pulse">
-                                Retailigent is working...
-                              </span>
+                        {
+                          isSending
+                          &&
+                          !hasStreamingAssistant
+                          && (
+                            <div className="flex justify-start">
+                              <div className="max-w-[92%] rounded-2xl rounded-bl-md border border-[#dccbc4] bg-[#fffaf7] px-4 py-3 text-sm text-[#756369] shadow-sm sm:max-w-md">
+                                <span className="animate-pulse">
+                                  Retailigent is working...
+                                </span>
+                              </div>
                             </div>
-                          </div>
-                        )
-                      }
-                    </div>
-                  )
+                          )
+                        }
+                      </div>
+                    )
               }
 
 
@@ -741,6 +908,7 @@ export default function ChatWindow() {
           </section>
 
 
+          {/* Composer */}
           <div className="sticky bottom-0 z-20 border-t border-[#dccbc4] bg-[#f1e6de]/95 px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 backdrop-blur sm:px-6 sm:py-4 lg:px-8">
             <div className="mx-auto max-w-5xl">
               <form

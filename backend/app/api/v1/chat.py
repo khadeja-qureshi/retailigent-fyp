@@ -141,6 +141,32 @@ def get_conversation(
     )
 
 
+@router.delete(
+    "/conversations/{conversation_id}"
+)
+def delete_conversation(
+    conversation_id: str,
+    customer_id: str = Depends(
+        get_current_user_id
+    ),
+    _customer_role: str = Depends(
+        require_customer
+    ),
+) -> dict:
+    """
+    Permanently delete one chat conversation
+    belonging to the authenticated customer.
+    """
+
+    return (
+        chat_service
+        .delete_conversation(
+            customer_id,
+            conversation_id,
+        )
+    )
+
+
 @router.post(
     "/{conversation_id}/finalize"
 )

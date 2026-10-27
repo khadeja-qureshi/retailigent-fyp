@@ -338,6 +338,75 @@ def list_customer_conversations(
     return response.data or []
 
 
+def delete_conversation(
+    customer_id: str,
+    conversation_id: str,
+) -> dict:
+    """
+    Permanently delete one owned conversation.
+
+    The ownership check is mandatory because this
+    backend uses the Supabase service_role client.
+    Related messages and conversation_state rows
+    are removed by database ON DELETE CASCADE
+    constraints.
+    """
+
+    conversation = (
+        get_owned_conversation(
+            customer_id,
+            conversation_id,
+        )
+    )
+
+    # Support tickets are business records and must survive
+    # chat deletion. The current schema keeps a nullable
+    # conversation_id on support_escalations without
+    # ON DELETE SET NULL, so explicitly detach owned tickets
+    # before deleting the conversation.
+    (
+        supabase_admin
+        .table("support_escalations")
+        .update(
+            {
+                "conversation_id":
+                    None,
+            }
+        )
+        .eq(
+            "customer_id",
+            customer_id,
+        )
+        .eq(
+            "conversation_id",
+            conversation_id,
+        )
+        .execute()
+    )
+
+    (
+        supabase_admin
+        .table("conversations")
+        .delete()
+        .eq(
+            "id",
+            conversation_id,
+        )
+        .eq(
+            "customer_id",
+            customer_id,
+        )
+        .execute()
+    )
+
+    return {
+        "id":
+            str(conversation["id"]),
+        "deleted":
+            True,
+    }
+
+
 def get_conversation_history(
     customer_id: str,
     conversation_id: str,

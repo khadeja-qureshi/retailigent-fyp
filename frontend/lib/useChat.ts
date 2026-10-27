@@ -8,6 +8,7 @@ import {
 } from "react";
 
 import {
+  deleteConversation as deleteConversationRequest,
   finalizeConversation,
   getConversationHistory,
   listConversations,
@@ -589,6 +590,94 @@ export function useChat() {
     );
 
 
+  const deleteConversation =
+    useCallback(
+      async (
+        targetConversationId:
+          string
+      ): Promise<boolean> => {
+        if (
+          isSending
+          ||
+          isHistoryLoading
+        ) {
+          return false;
+        }
+
+        setError(
+          null
+        );
+
+        setIsHistoryLoading(
+          true
+        );
+
+        try {
+          await deleteConversationRequest(
+            targetConversationId
+          );
+
+          if (
+            targetConversationId
+            === conversationId
+          ) {
+            abortRef.current
+              ?.abort();
+
+            abortRef.current =
+              null;
+
+            window.localStorage.removeItem(
+              ACTIVE_CONVERSATION_STORAGE_KEY
+            );
+
+            setConversationId(
+              null
+            );
+
+            setMessages(
+              []
+            );
+          }
+
+          setConversations(
+            (current) =>
+              current.filter(
+                (conversation) =>
+                  conversation.id
+                  !== targetConversationId
+              )
+          );
+
+          await refreshConversations();
+
+          return true;
+
+        } catch (caught) {
+          setError(
+            getErrorMessage(
+              caught,
+              "Conversation could not be deleted."
+            )
+          );
+
+          return false;
+
+        } finally {
+          setIsHistoryLoading(
+            false
+          );
+        }
+      },
+      [
+        conversationId,
+        isHistoryLoading,
+        isSending,
+        refreshConversations,
+      ]
+    );
+
+
   const loadConversation =
     useCallback(
       async (
@@ -714,6 +803,7 @@ useEffect(() => {
     stop,
     newConversation,
     loadConversation,
+    deleteConversation,
     refreshConversations,
   };
 }
