@@ -121,6 +121,14 @@ export interface StockStatusBlock {
     | string
     | null;
 
+  color?:
+    | string
+    | null;
+
+  size?:
+    | string
+    | null;
+
   branches:
     StockBranchItem[];
 }

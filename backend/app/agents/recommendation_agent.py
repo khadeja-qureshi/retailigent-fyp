@@ -8,27 +8,16 @@ from app.services.recommendation_service import (
 )
 
 
-def _first_value(value: Any) -> Any:
-    """
-    Return the first usable value from a saved
-    preference.
-    """
-
+def _first_value(
+    value: Any,
+) -> Any:
+    """Return the first usable value from a saved preference."""
     if isinstance(value, list):
-        return (
-            value[0]
-            if value
-            else None
-        )
+        return value[0] if value else None
 
     if isinstance(value, str):
         value = value.strip()
-
-        return (
-            value
-            if value
-            else None
-        )
+        return value if value else None
 
     return value
 
@@ -37,44 +26,105 @@ def _memory_value(
     facts: list[dict[str, Any]],
     key: str,
 ) -> Any:
-    """
-    Find a usable remembered fact by memory key.
-    """
-
+    """Find a usable remembered fact by memory key."""
     for fact in facts:
-        if (
-            fact.get("memory_key")
-            != key
-        ):
+        if fact.get("memory_key") != key:
             continue
 
-        value = fact.get(
-            "memory_value"
-        )
+        value = fact.get("memory_value")
 
-        if (
-            value is not None
-            and value != ""
-        ):
+        if value is not None and value != "":
             return value
 
     return None
+
+
+def _normalize_text(
+    value: Any,
+) -> str:
+    return " ".join(
+        str(value or "")
+        .strip()
+        .casefold()
+        .replace("-", " ")
+        .replace("_", " ")
+        .split()
+    )
+
+
+def _available_at_preferred_branch(
+    result: dict[str, Any],
+    preferred_branch: str | None,
+) -> bool:
+    """
+    Return True when a result has positive availability at the
+    customer's preferred branch/location.
+
+    Saved branch preference is used only for recommendation ranking.
+    It never overrides explicit branch constraints in the current
+    user message.
+    """
+    wanted = _normalize_text(
+        preferred_branch
+    )
+
+    if not wanted:
+        return False
+
+    for row in (
+        result.get("inventory")
+        or []
+    ):
+        try:
+            available = int(
+                row.get(
+                    "available_quantity"
+                )
+                or 0
+            )
+        except (
+            TypeError,
+            ValueError,
+        ):
+            available = 0
+
+        if available <= 0:
+            continue
+
+        branch = (
+            row.get("branch")
+            or {}
+        )
+
+        haystack = " ".join(
+            _normalize_text(
+                branch.get(key)
+            )
+            for key in (
+                "name",
+                "city",
+                "area",
+                "address",
+            )
+        )
+
+        if wanted in haystack:
+            return True
+
+    return False
 
 
 class RecommendationAgent:
     """
     Personalized recommendation agent.
 
-    Explicit filters supplied in the current
-    message are hard constraints.
-
-    Saved preferences and memories are soft
-    personalization constraints.
-
-    If the saved preferences over-constrain the
-    search and return zero products, the agent
-    retries using only the explicit constraints
-    from the current request.
+    Rules:
+    1. Explicit filters from the current user message are hard constraints.
+    2. Saved preferences and memories are used only when personalization is enabled.
+    3. Saved preferences never override an explicit current-message constraint.
+    4. Generic recommendations keep saved category/color/size/material/budget filters.
+    5. Preference relaxation is only used when a real current query exists.
+    6. Preferred branch is a ranking signal, not a correctness constraint.
     """
 
     def recommend(
@@ -91,8 +141,6 @@ class RecommendationAgent:
         match_count: int = 10,
     ) -> list[dict[str, Any]]:
 
-        # Keep a copy of what the user explicitly
-        # requested in this message.
         explicit = {
             "category": category,
             "color": color,
@@ -110,6 +158,8 @@ class RecommendationAgent:
 
         personalization_applied = False
 
+        preferred_branch: str | None = None
+
         if context[
             "personalization_allowed"
         ]:
@@ -118,9 +168,7 @@ class RecommendationAgent:
             )
 
             facts = (
-                context[
-                    "remembered_facts"
-                ]
+                context["remembered_facts"]
             )
 
             if category is None:
@@ -193,6 +241,13 @@ class RecommendationAgent:
                     or material is not None
                 )
 
+            preferred_branch = (
+                _memory_value(
+                    facts,
+                    "preferred_branch",
+                )
+            )
+
             if min_price is None:
                 min_price = (
                     preferences.get(
@@ -217,12 +272,38 @@ class RecommendationAgent:
                     or max_price is not None
                 )
 
-        search_query = (
-            query or ""
+        raw_query = (
+            query
+            or ""
         ).strip()
 
-        if not search_query:
-            search_query = " ".join(
+        raw_query_normalized = (
+            raw_query.casefold()
+        )
+
+        generic_recommendation_query = (
+            not raw_query
+            or any(
+                phrase
+                in raw_query_normalized
+                for phrase in (
+                    "recommend",
+                    "suggest",
+                    "what should i buy",
+                    "what would suit me",
+                    "what would you recommend",
+                    "what do you recommend",
+                    "recommend something",
+                    "suggest something",
+                    "mere liye",
+                    "kya loon",
+                    "kya lu",
+                )
+            )
+        )
+
+        personalized_query = (
+            " ".join(
                 str(value)
                 for value in (
                     category,
@@ -230,10 +311,32 @@ class RecommendationAgent:
                     material,
                 )
                 if value
-            ).strip()
+            )
+            .strip()
+        )
 
-        if not search_query:
-            search_query = "clothing"
+        if (
+            generic_recommendation_query
+            and personalized_query
+        ):
+            search_query = (
+                personalized_query
+            )
+
+        elif raw_query:
+            search_query = (
+                raw_query
+            )
+
+        elif personalized_query:
+            search_query = (
+                personalized_query
+            )
+
+        else:
+            search_query = (
+                "clothing"
+            )
 
         results = (
             product_agent.search(
@@ -248,26 +351,67 @@ class RecommendationAgent:
             )
         )
 
-        # Stored preferences should guide
-        # recommendations, but should not cause a
-        # broad semantic request such as:
-        #
-        # "something for a wedding"
-        #
-        # to incorrectly return no catalog results.
-        #
-        # Therefore retry once using only the
-        # explicit current-message filters.
         if (
             not results
             and personalization_applied
-            and bool(
-                (query or "").strip()
+            and raw_query
+        ):
+            relaxed_category = (
+                explicit["category"]
+                or category
             )
+
+            relaxed_material = (
+                explicit["material"]
+                or material
+            )
+
+            if (
+                relaxed_category
+                or relaxed_material
+            ):
+                relaxed_query = (
+                    " ".join(
+                        str(value)
+                        for value in (
+                            relaxed_category,
+                            relaxed_material,
+                        )
+                        if value
+                    )
+                    .strip()
+                    or raw_query
+                )
+
+                results = (
+                    product_agent.search(
+                        query=relaxed_query,
+                        match_count=match_count,
+                        category=relaxed_category,
+                        color=explicit[
+                            "color"
+                        ],
+                        size=explicit[
+                            "size"
+                        ],
+                        material=relaxed_material,
+                        min_price=explicit[
+                            "min_price"
+                        ],
+                        max_price=explicit[
+                            "max_price"
+                        ],
+                    )
+                )
+
+        if (
+            not results
+            and personalization_applied
+            and raw_query
         ):
             results = (
                 product_agent.search(
-                    query=search_query,
+                    query=raw_query,
                     match_count=match_count,
                     category=explicit[
                         "category"
@@ -288,6 +432,21 @@ class RecommendationAgent:
                         "max_price"
                     ],
                 )
+            )
+
+        if (
+            preferred_branch
+            and results
+        ):
+            results = sorted(
+                results,
+                key=lambda item: (
+                    not
+                    _available_at_preferred_branch(
+                        item,
+                        preferred_branch,
+                    )
+                ),
             )
 
         return results

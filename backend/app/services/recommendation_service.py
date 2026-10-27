@@ -112,3 +112,51 @@ def get_recommendation_context(
         },
         "remembered_facts": remembered_facts,
     }
+
+def get_personalization_preference(
+    customer_id: str,
+) -> dict[str, bool]:
+    response = (
+        supabase_admin
+        .table("customer_preferences")
+        .select("allow_personalized_recommendations")
+        .eq("customer_id", customer_id)
+        .limit(1)
+        .execute()
+    )
+
+    if not response.data:
+        return {
+            "allow_personalized_recommendations": False,
+        }
+
+    return {
+        "allow_personalized_recommendations": bool(
+            response.data[0].get(
+                "allow_personalized_recommendations",
+                False,
+            )
+        ),
+    }
+
+
+def set_personalization_preference(
+    customer_id: str,
+    enabled: bool,
+) -> dict[str, bool]:
+    (
+        supabase_admin
+        .table("customer_preferences")
+        .upsert(
+            {
+                "customer_id": customer_id,
+                "allow_personalized_recommendations": enabled,
+            },
+            on_conflict="customer_id",
+        )
+        .execute()
+    )
+
+    return {
+        "allow_personalized_recommendations": enabled,
+    }

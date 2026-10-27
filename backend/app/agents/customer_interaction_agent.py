@@ -233,11 +233,18 @@ UUID_RE = re.compile(
 )
 
 
-NUMBER = r"([0-9]+(?:\.[0-9]+)?)"
+NUMBER = r"([0-9][0-9,]*(?:\.[0-9]+)?)"
 
 
 def _normalize(text: str) -> str:
-    text = text.strip().lower()
+    text = (
+        text.strip()
+        .lower()
+        .replace("’", "'")
+        .replace("‘", "'")
+        .replace("“", '"')
+        .replace("”", '"')
+    )
     text = re.sub(r"\s+", " ", text)
     return text
 
@@ -342,6 +349,15 @@ def _extract_product_name(
             r"(?:my\s+|the\s+)?"
             r"(?:cart|wishlist|shopping\s+cart)"
             r"(?:\s+and\s+(?:cart|wishlist))?"
+            r"(?:[?.!]|$)"
+        ),
+        (
+            r"^\s*(?:add|put|save)\s+"
+            r"(.+?)\s+"
+            r"(?:to|in|into)\s+"
+            r"(?:my\s+|the\s+)?"
+            r"smart\s+cart"
+            r"(?:\s+and\b.*)?"
             r"(?:[?.!]|$)"
         ),
         (
@@ -805,7 +821,8 @@ def _extract_price_range(
         (
             r"\b"
             + NUMBER
-            + r"\s*(?:se neeche|se kam)\b"
+            + r"\s*(?:rs\.?|pkr|rupay|rupees?)?\s*"
+            r"(?:se neeche|se kam)\b"
         ),
     ]
 
@@ -853,7 +870,8 @@ def _extract_target_price(
         (
             r"\b"
             + NUMBER
-            + r"\s*(?:se neeche|se kam)\b"
+            + r"\s*(?:rs\.?|pkr|rupay|rupees?)?\s*"
+            r"(?:se neeche|se kam)\b"
         ),
         (
             r"\b(?:price\s*)?"
@@ -927,6 +945,7 @@ def _extract_authorization_mode(
         "notify me",
         "alert me",
         "tell me when",
+        "let me know",
         "mujhe batana",
         "notify karna",
     }
@@ -954,7 +973,10 @@ def extract_entities(
 
     target_price = None
 
-    if intent == "smart_cart_create":
+    if intent in {
+        "smart_cart_create",
+        "alert_create",
+    }:
         target_price = (
             _extract_target_price(text)
         )
@@ -1031,6 +1053,13 @@ def classify_intent(
 
                 "refund",
                 "wrong item",
+                "wrong order",
+                "doesn't match what i ordered",
+                "doesnt match what i ordered",
+                "does not match what i ordered",
+                "item doesn't match",
+                "item doesnt match",
+                "item does not match",
                 "damaged item",
                 "broken item",
 
@@ -1274,6 +1303,57 @@ def classify_intent(
     ):
         return "support_request"
 
+    # Location-information questions must be classified before generic
+    # availability wording such as "do you have".  Otherwise a request
+    # like "Which branches do you have in Karachi?" becomes stock_check.
+    location_information_request = (
+        bool(re.search(
+            r"\bwhich\s+(?:branches|stores)\b",
+            text,
+            flags=re.IGNORECASE,
+        ))
+        or bool(re.search(
+            r"\b(?:branches|stores)\s+in\s+",
+            text,
+            flags=re.IGNORECASE,
+        ))
+        or bool(re.search(
+            r"\b(?:what\s+time|when)\b.*"
+            r"\b(?:branch|store)\b.*"
+            r"\b(?:open|opens|close|closes|closing)\b",
+            text,
+            flags=re.IGNORECASE,
+        ))
+        or bool(re.search(
+            r"\bwhere\s+is\b.*\b(?:branch|store)\b",
+            text,
+            flags=re.IGNORECASE,
+        ))
+        or _contains_any(
+            text,
+            {
+                "nearest branch",
+                "nearest store",
+                "closest branch",
+                "closest store",
+                "near me",
+                "nearby branch",
+                "nearby store",
+                "mere qareeb",
+                "mere kareeb",
+                "mere nazdeek",
+                "mere nazdiq",
+                "qareeb store",
+                "qareeb branch",
+                "kareeb store",
+                "kareeb branch",
+            },
+        )
+    )
+
+    if location_information_request:
+        return "store_location_search"
+
     # --------------------------------------------------------------
     # KEEP THE REST OF YOUR EXISTING classify_intent()
     # CODE BELOW THIS POINT EXACTLY AS IT IS.
@@ -1321,10 +1401,14 @@ def classify_intent(
             "notify me",
             "alert me",
             "tell me when",
+            "let me know",
             "mujhe batana",
             "price alert",
             "restock alert",
             "sale alert",
+            "back in stock",
+            "goes on sale",
+            "go on sale",
         },
     ):
         return "alert_create"
@@ -1494,11 +1578,17 @@ def classify_intent(
             text,
             {
                 "i prefer",
+                "i usually prefer",
+                "i normally prefer",
                 "i like",
                 "my usual size",
                 "my size is",
                 "i usually wear",
                 "i normally wear",
+                "i usually shop",
+                "i normally shop",
+                "my preferred branch",
+                "my preferred store",
                 "mera size",
                 "mujhe pasand",
             },

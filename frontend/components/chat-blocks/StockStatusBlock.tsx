@@ -77,6 +77,21 @@ export default function StockStatusBlock({
             {block.sku}
           </p>
         )}
+
+        {(block.color || block.size) && (
+          <p className="mt-2 text-sm font-medium text-neutral-400">
+            {[
+              block.color
+                ? `Color: ${block.color}`
+                : null,
+              block.size
+                ? `Size: ${block.size}`
+                : null,
+            ]
+              .filter(Boolean)
+              .join(" · ")}
+          </p>
+        )}
       </div>
 
       {block.branches.length === 0 ? (

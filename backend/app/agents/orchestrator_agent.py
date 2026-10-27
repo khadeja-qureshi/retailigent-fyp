@@ -33,7 +33,11 @@ from app.agents.support_agent import (
 from app.agents.purchase_agent import (
     purchase_agent,
 )
+from app.agents.alert_agent import (
+    alert_agent,
+)
 from app.schemas.chat import (
+    AlertBlock,
     CartSummaryBlock,
     BranchMapBlock,
     ChatTurnResponse,
@@ -74,6 +78,9 @@ from app.services.support_service import (
 )
 from app.services.demand_signal_service import (
     record_demand_signal,
+)
+from app.services.preference_capture_service import (
+    capture_explicit_preferences,
 )
 
 
@@ -586,6 +593,13 @@ def plan_intent(
                 "smart_cart_service."
                 "create_customer_smart_cart_rule"
             ),
+        )
+
+    if intent == "alert_create":
+        return PlannedTask(
+            agent_key="alert_agent",
+            task_type="create_alert",
+            tool_name="alert_agent.create",
         )
 
     if intent == "purchase":
@@ -1149,6 +1163,242 @@ def _resolve_named_action_variant(
     return None, []
 
 
+def _is_nearest_location_request(message: str) -> bool:
+    text = _normalize_catalog_text(message)
+    return any(
+        phrase in text
+        for phrase in (
+            "nearest branch",
+            "nearest store",
+            "closest branch",
+            "closest store",
+            "near me",
+            "mere qareeb",
+            "mere kareeb",
+            "mere nazdeek",
+            "mere nazdiq",
+            "qareeb store",
+            "qareeb branch",
+            "kareeb store",
+            "kareeb branch",
+        )
+    )
+
+
+def _infer_alert_type(message: str) -> str:
+    text = _normalize_catalog_text(message)
+
+    if any(
+        phrase in text
+        for phrase in (
+            "back in stock",
+            "restock",
+            "stock again",
+            "available again",
+        )
+    ):
+        return "restock"
+
+    if any(
+        phrase in text
+        for phrase in (
+            "goes on sale",
+            "go on sale",
+            "on sale",
+            "sale alert",
+        )
+    ):
+        return "sale"
+
+    return "price_drop"
+
+
+def _pending_action_payload(
+    parsed: ParsedCustomerMessage,
+    *,
+    variant_id: str | None = None,
+) -> dict[str, Any]:
+    return {
+        "intent": parsed.intent,
+        "variant_id": (
+            variant_id
+            or parsed.entities.variant_id
+        ),
+        "product_name": parsed.entities.product_name,
+        "category": parsed.entities.category,
+        "color": parsed.entities.color,
+        "size": parsed.entities.size,
+        "material": parsed.entities.material,
+        "branch_name": parsed.entities.branch_name,
+        "quantity": parsed.entities.quantity,
+        "target_price": parsed.entities.target_price,
+        "min_discount_percentage": (
+            parsed.entities.min_discount_percentage
+        ),
+        "authorization_mode": (
+            parsed.entities.authorization_mode
+        ),
+        "alert_type": (
+            _infer_alert_type(parsed.raw_message)
+            if parsed.intent == "alert_create"
+            else None
+        ),
+    }
+
+
+def _resume_pending_action(
+    parsed: ParsedCustomerMessage,
+    state: dict[str, Any],
+) -> ParsedCustomerMessage:
+    pending = state.get("pending_action")
+
+    if not isinstance(pending, dict):
+        return parsed
+
+    pending_intent = str(
+        pending.get("intent")
+        or ""
+    )
+
+    if pending_intent not in {
+        "smart_cart_create",
+        "alert_create",
+        "reservation_create",
+        "purchase",
+    }:
+        return parsed
+
+    # A clearly new shopping/location/support request cancels the old
+    # clarification rather than being hijacked by stale pending state.
+    if parsed.intent not in {
+        "unknown",
+        "alert_create",
+        "smart_cart_create",
+    }:
+        return parsed
+
+    parsed.intent = pending_intent
+
+    entities = parsed.entities
+
+    for field in (
+        "variant_id",
+        "product_name",
+        "category",
+        "color",
+        "size",
+        "material",
+        "branch_name",
+        "quantity",
+        "min_discount_percentage",
+        "authorization_mode",
+    ):
+        if getattr(entities, field) is None:
+            value = pending.get(field)
+            if value is not None:
+                setattr(entities, field, value)
+
+    if entities.target_price is None:
+        pending_target = pending.get("target_price")
+
+        if pending_target is not None:
+            entities.target_price = pending_target
+        elif entities.max_price is not None:
+            # A follow-up such as "below Rs. 2500" is parsed as a generic
+            # max-price phrase.  While a Smart Cart/price-alert action is
+            # pending, that value is the trigger price.
+            entities.target_price = entities.max_price
+            entities.max_price = None
+
+    if pending_intent == "smart_cart_create":
+        if (
+            entities.target_price is None
+            and entities.min_discount_percentage is None
+        ):
+            parsed.requires_clarification = True
+            parsed.clarification_question = (
+                customer_interaction_agent
+                .compose_smart_cart_trigger_clarification(
+                    parsed.language
+                )
+            )
+        elif entities.authorization_mode is None:
+            parsed.requires_clarification = True
+            parsed.clarification_question = (
+                customer_interaction_agent
+                .compose_smart_cart_authorization_clarification(
+                    parsed.language
+                )
+            )
+        else:
+            parsed.requires_clarification = False
+            parsed.clarification_question = None
+
+    elif pending_intent == "alert_create":
+        alert_type = str(
+            pending.get("alert_type")
+            or _infer_alert_type(parsed.raw_message)
+        )
+
+        if (
+            alert_type == "price_drop"
+            and entities.target_price is None
+        ):
+            parsed.requires_clarification = True
+            parsed.clarification_question = (
+                "What target price should I watch for?"
+                if parsed.language == "english"
+                else "Kis target price par alert chahiye?"
+            )
+        else:
+            parsed.requires_clarification = False
+            parsed.clarification_question = None
+
+    elif pending_intent in {
+        "reservation_create",
+        "purchase",
+    }:
+        # Let the concrete reservation/purchase branch validate whichever
+        # field is still missing.  A short follow-up such as "Gulberg" or
+        # "the second one" is often parsed as unknown by itself, but it is
+        # meaningful in the context of the pending action.
+        parsed.requires_clarification = False
+        parsed.clarification_question = None
+
+    return parsed
+
+
+def _preference_acknowledgement(
+    parsed: ParsedCustomerMessage,
+    stored: list[dict[str, Any]],
+) -> str:
+    labels = [
+        f"{item.get('label')}: {item.get('value')}"
+        for item in stored
+        if item.get("value") is not None
+    ]
+
+    detail = ", ".join(labels)
+
+    if parsed.language in {"roman_urdu", "mixed"}:
+        if detail:
+            return (
+                "Theek hai — maine aapki stated preferences save kar li hain: "
+                f"{detail}. Personalization enabled ho to recommendations mein "
+                "inhein use kiya jayega."
+            )
+        return "Theek hai — maine aapki preference note kar li hai."
+
+    if detail:
+        return (
+            "Got it — I saved the preferences you explicitly stated: "
+            f"{detail}. They will be used for recommendations when "
+            "personalization is enabled."
+        )
+
+    return "Got it — I noted your preference."
+
+
 def build_stock_status_block(
     variant_id: str,
     inventory: list[dict],
@@ -1156,6 +1406,10 @@ def build_stock_status_block(
     branch_name: (
         str | None
     ) = None,
+    product_name: str | None = None,
+    sku: str | None = None,
+    color: str | None = None,
+    size: str | None = None,
 ) -> StockStatusBlock:
     branches: list[
         StockBranchItem
@@ -1245,6 +1499,10 @@ def build_stock_status_block(
         variant_id=(
             variant_id
         ),
+        product_name=product_name,
+        sku=sku,
+        color=color,
+        size=size,
         branches=(
             branches
         ),
@@ -1516,6 +1774,8 @@ class OrchestratorAgent:
         conversation_id: (
             str | None
         ) = None,
+        customer_latitude: float | None = None,
+        customer_longitude: float | None = None,
     ) -> ChatTurnResponse:
         is_new_conversation = (
             conversation_id is None
@@ -1618,6 +1878,11 @@ class OrchestratorAgent:
             parsed.intent = "feedback_submit"
             parsed.requires_clarification = False
             parsed.clarification_question = None
+
+        parsed = _resume_pending_action(
+            parsed,
+            state,
+        )
 
         if (
             conversation.get(
@@ -1742,6 +2007,42 @@ class OrchestratorAgent:
                     )
                 )
 
+                if parsed.intent in {
+                    "smart_cart_create",
+                    "alert_create",
+                }:
+                    resolved_variant = resolve_variant_reference(
+                        parsed,
+                        state,
+                    )
+
+                    if not resolved_variant:
+                        resolved_variant, _ = _resolve_named_action_variant(
+                            parsed=parsed,
+                            state=state,
+                            customer_id=customer_id,
+                        )
+
+                    if resolved_variant:
+                        parsed.entities.variant_id = resolved_variant
+
+                    pending_payload = _pending_action_payload(
+                        parsed,
+                        variant_id=resolved_variant,
+                    )
+
+                    chat_service.merge_conversation_state(
+                        customer_id,
+                        conversation_id,
+                        {
+                            "pending_action": pending_payload,
+                            "last_variant_id": (
+                                resolved_variant
+                                or state.get("last_variant_id")
+                            ),
+                        },
+                    )
+
                 return (
                     self
                     ._finish_clarification(
@@ -1763,28 +2064,31 @@ class OrchestratorAgent:
                 parsed.intent
                 == "store_location_search"
             ):
-                plan = plan_intent(parsed.intent)
-                assert plan is not None
-
-                arguments = {
-                    "branch_name": parsed.entities.branch_name,
-                }
-
-                results = self._run_traced_tool(
-                    run_id=run_id,
-                    plan=plan,
-                    arguments=arguments,
-                    call=lambda: location_agent.search(**arguments),
+                nearest_request = _is_nearest_location_request(
+                    message
                 )
 
-                block = BranchMapBlock(
-                    title="Store locations and hours",
-                    branches=results,
-                )
+                if (
+                    nearest_request
+                    and (
+                        customer_latitude is None
+                        or customer_longitude is None
+                    )
+                ):
+                    content = (
+                        "I need your browser location permission to find the "
+                        "nearest branch. Please allow location access and try "
+                        "again, or tell me your city/area."
+                        if parsed.language == "english"
+                        else (
+                            "Nearest branch batane ke liye browser location "
+                            "permission chahiye. Location allow karke dobara "
+                            "try karein, ya apna city/area bata dein."
+                        )
+                    )
+                    blocks = []
 
-                (
-                    chat_service
-                    .merge_conversation_state(
+                    chat_service.merge_conversation_state(
                         customer_id,
                         conversation_id,
                         {
@@ -1792,20 +2096,98 @@ class OrchestratorAgent:
                             "language": parsed.language,
                         },
                     )
+
+                else:
+                    plan = plan_intent(parsed.intent)
+                    assert plan is not None
+
+                    arguments = {
+                        "branch_name": parsed.entities.branch_name,
+                        "customer_latitude": customer_latitude,
+                        "customer_longitude": customer_longitude,
+                    }
+
+                    results = self._run_traced_tool(
+                        run_id=run_id,
+                        plan=plan,
+                        arguments=arguments,
+                        call=lambda: location_agent.search(**arguments),
+                    )
+
+                    if nearest_request and results:
+                        results = results[:1]
+
+                    block = BranchMapBlock(
+                        title=(
+                            "Nearest store"
+                            if nearest_request
+                            else "Store locations and hours"
+                        ),
+                        branches=results,
+                    )
+
+                    chat_service.merge_conversation_state(
+                        customer_id,
+                        conversation_id,
+                        {
+                            "last_intent": parsed.intent,
+                            "language": parsed.language,
+                        },
+                    )
+
+                    if results:
+                        content = (
+                            "Here is the nearest active store based on your "
+                            "current browser location."
+                            if nearest_request
+                            else (
+                                "Here are the matching store locations, "
+                                "addresses, and opening hours."
+                            )
+                        )
+                    else:
+                        content = (
+                            "I couldn't find an active store matching that "
+                            "location. Try specifying a branch or area."
+                        )
+
+                    blocks = [block]
+
+            elif (
+                parsed.intent
+                == "preference_update"
+            ):
+                stored_preferences = capture_explicit_preferences(
+                    customer_id,
+                    conversation_id,
+                    parsed.entities,
                 )
 
-                if results:
-                    content = (
-                        "Here are the matching store locations, "
-                        "addresses, and opening hours."
+                # Refresh the cached context so subsequent turns in the same
+                # conversation do not keep using an old memory snapshot.
+                try:
+                    refreshed_context = memory_agent.load_context(
+                        customer_id
                     )
-                else:
-                    content = (
-                        "I couldn't find an active store matching "
-                        "that location. Try specifying a branch or area."
-                    )
+                except Exception:
+                    refreshed_context = customer_context
 
-                blocks = [block]
+                chat_service.merge_conversation_state(
+                    customer_id,
+                    conversation_id,
+                    {
+                        "last_intent": parsed.intent,
+                        "language": parsed.language,
+                        "customer_context_snapshot": refreshed_context,
+                        "customer_context_loaded": True,
+                    },
+                )
+
+                content = _preference_acknowledgement(
+                    parsed,
+                    stored_preferences,
+                )
+                blocks = []
 
             elif (
                 parsed.intent
@@ -2465,18 +2847,52 @@ class OrchestratorAgent:
                             metadata=metadata,
                         )
 
-                    stock_blocks = [
-                        build_stock_status_block(
-                            variant_id,
-                            rows,
-                            branch_name=None,
+                    exact_by_variant = {
+                        str(result.get("variant_id")): result
+                        for result in exact_results
+                        if result.get("variant_id")
+                    }
+
+                    stock_blocks: list[StockStatusBlock] = []
+
+                    for variant_id, rows in zip(
+                        variant_ids,
+                        display_rows_by_variant,
+                        strict=True,
+                    ):
+                        result = exact_by_variant.get(str(variant_id)) or {}
+                        product = result.get("product") or {}
+                        variant = result.get("variant") or {}
+                        color_data = variant.get("color") or {}
+                        size_data = variant.get("size") or {}
+
+                        stock_blocks.append(
+                            build_stock_status_block(
+                                variant_id,
+                                rows,
+                                branch_name=None,
+                                product_name=(
+                                    str(product.get("name"))
+                                    if product.get("name")
+                                    else None
+                                ),
+                                sku=(
+                                    str(variant.get("sku"))
+                                    if variant.get("sku")
+                                    else None
+                                ),
+                                color=(
+                                    str(color_data.get("name"))
+                                    if color_data.get("name")
+                                    else None
+                                ),
+                                size=(
+                                    str(size_data.get("name"))
+                                    if size_data.get("name")
+                                    else None
+                                ),
+                            )
                         )
-                        for variant_id, rows in zip(
-                            variant_ids,
-                            display_rows_by_variant,
-                            strict=True,
-                        )
-                    ]
 
                     product_label = (
                         _result_product_name(exact_results[0])
@@ -2576,6 +2992,46 @@ class OrchestratorAgent:
                 )
 
                 if not variant_id:
+                    variant_id, candidates = _resolve_named_action_variant(
+                        parsed=parsed,
+                        state=state,
+                        customer_id=customer_id,
+                    )
+
+                    if (
+                        not variant_id
+                        and parsed.entities.product_name
+                        and candidates
+                    ):
+                        chat_service.merge_conversation_state(
+                            customer_id,
+                            conversation_id,
+                            {
+                                "pending_action": _pending_action_payload(parsed),
+                            },
+                        )
+                        return self._finish_clarification(
+                            customer_id=customer_id,
+                            conversation_id=conversation_id,
+                            run_id=run_id,
+                            parsed=parsed,
+                            content=(
+                                f"I found multiple variants of "
+                                f"{parsed.entities.product_name}. "
+                                "Please specify the size/color or select one "
+                                "of the product cards first."
+                            ),
+                            update_state=False,
+                        )
+
+                if not variant_id:
+                    chat_service.merge_conversation_state(
+                        customer_id,
+                        conversation_id,
+                        {
+                            "pending_action": _pending_action_payload(parsed),
+                        },
+                    )
                     return self._finish_clarification(
                         customer_id=customer_id,
                         conversation_id=conversation_id,
@@ -2587,11 +3043,23 @@ class OrchestratorAgent:
                                 parsed.language
                             )
                         ),
+                        update_state=False,
                     )
 
                 branch_name = parsed.entities.branch_name
 
                 if not branch_name:
+                    chat_service.merge_conversation_state(
+                        customer_id,
+                        conversation_id,
+                        {
+                            "pending_action": _pending_action_payload(
+                                parsed,
+                                variant_id=variant_id,
+                            ),
+                            "last_variant_id": variant_id,
+                        },
+                    )
                     return self._finish_clarification(
                         customer_id=customer_id,
                         conversation_id=conversation_id,
@@ -2605,6 +3073,7 @@ class OrchestratorAgent:
                             "Kis branch se reserve karna hai? "
                             "Please branch ka naam batayein."
                         ),
+                        update_state=False,
                     )
 
                 quantity = parsed.entities.quantity or 1
@@ -2625,37 +3094,13 @@ class OrchestratorAgent:
                     or []
                 )
 
-                requested_branch = (
-                    branch_name.strip().casefold()
-                )
-
-                def branch_matches(row):
-                    actual_name = str(
-                        (row.get("branch") or {}).get("name") or ""
-                    ).strip().casefold()
-
-                    if actual_name == requested_branch:
-                        return True
-
-                    normalized_actual = re.sub(
-                        r"[\s_]+", " ", actual_name
-                    )
-                    normalized_requested = re.sub(
-                        r"[\s_]+", " ", requested_branch
-                    )
-
-                    return bool(
-                        re.fullmatch(
-                            r"(?:.+\s-\s)?"
-                            + re.escape(normalized_requested),
-                            normalized_actual,
-                        )
-                    )
-
                 matching_rows = [
                     row
                     for row in inventory_rows
-                    if branch_matches(row)
+                    if _location_matches_branch(
+                        row.get("branch") or {},
+                        branch_name,
+                    )
                 ]
 
                 matching_row = (
@@ -2765,6 +3210,7 @@ class OrchestratorAgent:
                         "last_variant_id": variant_id,
                         "last_reservation_id": reservation_id,
                         "last_reservation_variant_id": variant_id,
+                        "pending_action": None,
                         "language": parsed.language,
                     },
                 )
@@ -3055,6 +3501,31 @@ class OrchestratorAgent:
                 )
 
                 if not variant_id:
+                    variant_id, candidates = _resolve_named_action_variant(
+                        parsed=parsed,
+                        state=state,
+                        customer_id=customer_id,
+                    )
+
+                    if (
+                        not variant_id
+                        and parsed.entities.product_name
+                        and candidates
+                    ):
+                        return self._finish_clarification(
+                            customer_id=customer_id,
+                            conversation_id=conversation_id,
+                            run_id=run_id,
+                            parsed=parsed,
+                            content=(
+                                f"I found multiple variants of "
+                                f"{parsed.entities.product_name}. "
+                                "Please specify the size/color or select one "
+                                "of the product cards first."
+                            ),
+                        )
+
+                if not variant_id:
                     return (
                         self
                         ._finish_clarification(
@@ -3088,6 +3559,17 @@ class OrchestratorAgent:
                     .min_discount_percentage
                     is None
                 ):
+                    chat_service.merge_conversation_state(
+                        customer_id,
+                        conversation_id,
+                        {
+                            "pending_action": _pending_action_payload(
+                                parsed,
+                                variant_id=variant_id,
+                            ),
+                            "last_variant_id": variant_id,
+                        },
+                    )
                     return (
                         self
                         ._finish_clarification(
@@ -3120,6 +3602,17 @@ class OrchestratorAgent:
                     authorization_mode
                     is None
                 ):
+                    chat_service.merge_conversation_state(
+                        customer_id,
+                        conversation_id,
+                        {
+                            "pending_action": _pending_action_payload(
+                                parsed,
+                                variant_id=variant_id,
+                            ),
+                            "last_variant_id": variant_id,
+                        },
+                    )
                     return (
                         self
                         ._finish_clarification(
@@ -3238,6 +3731,8 @@ class OrchestratorAgent:
                                 variant_id,
                             "last_smart_cart_rule_id":
                                 rule["id"],
+                            "pending_action":
+                                None,
                             "language":
                                 parsed.language,
                         },
@@ -3258,6 +3753,157 @@ class OrchestratorAgent:
 
             elif (
                 parsed.intent
+                == "alert_create"
+            ):
+                variant_id = resolve_variant_reference(
+                    parsed,
+                    state,
+                )
+
+                if not variant_id:
+                    variant_id, candidates = _resolve_named_action_variant(
+                        parsed=parsed,
+                        state=state,
+                        customer_id=customer_id,
+                    )
+
+                    if (
+                        not variant_id
+                        and parsed.entities.product_name
+                        and candidates
+                    ):
+                        return self._finish_clarification(
+                            customer_id=customer_id,
+                            conversation_id=conversation_id,
+                            run_id=run_id,
+                            parsed=parsed,
+                            content=(
+                                f"I found multiple variants of "
+                                f"{parsed.entities.product_name}. "
+                                "Please specify the size/color or select one "
+                                "of the product cards first."
+                            ),
+                        )
+
+                if not variant_id:
+                    return self._finish_clarification(
+                        customer_id=customer_id,
+                        conversation_id=conversation_id,
+                        run_id=run_id,
+                        parsed=parsed,
+                        content=(
+                            customer_interaction_agent
+                            .compose_item_reference_clarification(
+                                parsed.language
+                            )
+                        ),
+                    )
+
+                pending = state.get("pending_action")
+                pending_alert_type = (
+                    str(pending.get("alert_type"))
+                    if isinstance(pending, dict)
+                    and pending.get("intent") == "alert_create"
+                    and pending.get("alert_type")
+                    else None
+                )
+
+                alert_type = (
+                    pending_alert_type
+                    or _infer_alert_type(message)
+                )
+
+                target_price = parsed.entities.target_price
+
+                if (
+                    alert_type == "price_drop"
+                    and target_price is None
+                ):
+                    chat_service.merge_conversation_state(
+                        customer_id,
+                        conversation_id,
+                        {
+                            "pending_action": {
+                                **_pending_action_payload(
+                                    parsed,
+                                    variant_id=variant_id,
+                                ),
+                                "alert_type": alert_type,
+                            },
+                            "last_variant_id": variant_id,
+                        },
+                    )
+
+                    return self._finish_clarification(
+                        customer_id=customer_id,
+                        conversation_id=conversation_id,
+                        run_id=run_id,
+                        parsed=parsed,
+                        content=(
+                            "What target price should I watch for?"
+                            if parsed.language == "english"
+                            else "Kis target price par alert chahiye?"
+                        ),
+                        update_state=False,
+                    )
+
+                plan = plan_intent(parsed.intent)
+                assert plan is not None
+
+                arguments = {
+                    "variant_id": variant_id,
+                    "alert_type": alert_type,
+                    "target_price": target_price,
+                }
+
+                alert = self._run_traced_tool(
+                    run_id=run_id,
+                    plan=plan,
+                    arguments=arguments,
+                    call=lambda: alert_agent.create(
+                        customer_id=customer_id,
+                        variant_id=variant_id,
+                        alert_type=alert_type,
+                        target_price=target_price,
+                    ),
+                )
+
+                block = AlertBlock(
+                    alert=alert
+                )
+
+                chat_service.merge_conversation_state(
+                    customer_id,
+                    conversation_id,
+                    {
+                        "last_intent": parsed.intent,
+                        "last_variant_id": variant_id,
+                        "last_alert_id": alert.get("id"),
+                        "pending_action": None,
+                        "language": parsed.language,
+                    },
+                )
+
+                if alert_type == "restock":
+                    content = (
+                        "Restock alert created. I'll notify you when this "
+                        "variant is back in stock."
+                    )
+                elif alert_type == "sale":
+                    content = (
+                        "Sale alert created. I'll notify you when this "
+                        "variant goes on sale."
+                    )
+                else:
+                    content = (
+                        f"Price alert created. I'll notify you when this "
+                        f"variant reaches Rs. {float(target_price):,.0f}."
+                    )
+
+                blocks = [block]
+
+            elif (
+                parsed.intent
                 == "purchase"
             ):
                 variant_id = (
@@ -3268,6 +3914,20 @@ class OrchestratorAgent:
                 )
 
                 if not variant_id:
+                    variant_id, candidates = _resolve_named_action_variant(
+                        parsed=parsed,
+                        state=state,
+                        customer_id=customer_id,
+                    )
+
+                if not variant_id:
+                    chat_service.merge_conversation_state(
+                        customer_id,
+                        conversation_id,
+                        {
+                            "pending_action": _pending_action_payload(parsed),
+                        },
+                    )
                     return (
                         self
                         ._finish_clarification(
@@ -3287,6 +3947,7 @@ class OrchestratorAgent:
                                     parsed.language
                                 )
                             ),
+                            update_state=False,
                         )
                     )
 
@@ -3432,6 +4093,8 @@ class OrchestratorAgent:
                             str(
                                 order_id
                             ),
+                        "pending_action":
+                            None,
                         "language":
                             parsed.language,
                     }
@@ -3459,6 +4122,8 @@ class OrchestratorAgent:
                             result.get(
                                 "reason_code"
                             ),
+                        "pending_action":
+                            None,
                         "language":
                             parsed.language,
                     }

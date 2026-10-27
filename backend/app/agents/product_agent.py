@@ -449,6 +449,15 @@ class ProductAgent:
                 ):
                     continue
 
+            elif (
+                min_price is not None
+                or max_price is not None
+            ):
+                # A price constraint is a hard correctness gate.  If an
+                # authoritative price cannot be resolved, do not include the
+                # variant as though it satisfied the customer's budget.
+                continue
+
             # ---------------------------------------------------------
             # City filter
             # ---------------------------------------------------------

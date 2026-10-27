@@ -557,7 +557,65 @@ export default function NavBar() {
 
 
   if (!signedIn) {
-    return null;
+    return (
+      <header className="sticky top-0 z-50 h-14 w-full border-b border-white/10 bg-[#332e34]/95 text-white shadow-md shadow-black/10 backdrop-blur-xl">
+        <div className="mx-auto flex h-full w-full max-w-[1600px] items-center gap-3 px-4 sm:px-5">
+          <Link
+            href="/"
+            className="flex shrink-0 items-center gap-2.5"
+          >
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#7779de] text-sm font-bold text-white shadow-md shadow-[#7779de]/20">
+              R
+            </span>
+
+            <div className="leading-none">
+              <p className="text-sm font-semibold tracking-[0.15em] text-white">
+                RETAILIGENT
+              </p>
+            </div>
+          </Link>
+
+          <nav className="ml-auto hidden items-center gap-1 sm:flex">
+            <Link
+              href="/"
+              className="rounded-lg px-3 py-2 text-sm text-white/75 transition hover:bg-white/10 hover:text-white"
+            >
+              Home
+            </Link>
+
+            <Link
+              href="/chat"
+              className={
+                (
+                  "rounded-lg px-3 py-2 text-sm transition "
+                )
+                + (
+                  pathname === "/chat"
+                    ? "bg-[#7779de] font-semibold text-white"
+                    : "text-white/75 hover:bg-white/10 hover:text-white"
+                )
+              }
+            >
+              Assistant
+            </Link>
+
+            <Link
+              href="/login"
+              className="rounded-xl bg-[#7779de] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#696bd0]"
+            >
+              Sign in
+            </Link>
+          </nav>
+
+          <Link
+            href="/login"
+            className="ml-auto rounded-xl bg-[#7779de] px-4 py-2 text-sm font-semibold text-white sm:hidden"
+          >
+            Sign in
+          </Link>
+        </div>
+      </header>
+    );
   }
 
 

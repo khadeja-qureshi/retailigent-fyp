@@ -83,6 +83,16 @@ def capture_explicit_preferences(
             )
         )
 
+    if entities.branch_name:
+        candidates.append(
+            (
+                "other",
+                "preferred_branch",
+                "branch",
+                entities.branch_name,
+            )
+        )
+
     stored: list[
         dict[str, Any]
     ] = []

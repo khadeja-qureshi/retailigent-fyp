@@ -126,6 +126,10 @@ class StockStatusBlock(BaseModel):
 
     sku: str | None = None
 
+    color: str | None = None
+
+    size: str | None = None
+
     branches: list[
         StockBranchItem
     ]

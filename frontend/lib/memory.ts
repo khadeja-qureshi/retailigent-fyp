@@ -161,3 +161,79 @@ export async function deleteMemory(
     );
   }
 }
+
+
+export interface PersonalizationPreferenceResponse {
+  allow_personalized_recommendations:
+    boolean;
+}
+
+
+export async function getPersonalizationPreference():
+Promise<PersonalizationPreferenceResponse> {
+  const accessToken =
+    await token();
+
+  const response =
+    await fetch(
+      `${API_URL}/api/v1/memory/personalization`,
+      {
+        headers: {
+          Authorization:
+            `Bearer ${accessToken}`,
+        },
+      }
+    );
+
+  if (!response.ok) {
+    throw new Error(
+      "Personalization preference could not be loaded."
+    );
+  }
+
+  return (
+    await response.json()
+  ) as
+    PersonalizationPreferenceResponse;
+}
+
+
+export async function updatePersonalizationPreference(
+  enabled: boolean
+): Promise<PersonalizationPreferenceResponse> {
+  const accessToken =
+    await token();
+
+  const response =
+    await fetch(
+      `${API_URL}/api/v1/memory/personalization`,
+      {
+        method:
+          "PATCH",
+
+        headers: {
+          "Content-Type":
+            "application/json",
+
+          Authorization:
+            `Bearer ${accessToken}`,
+        },
+
+        body:
+          JSON.stringify({
+            enabled,
+          }),
+      }
+    );
+
+  if (!response.ok) {
+    throw new Error(
+      "Personalization preference could not be saved."
+    );
+  }
+
+  return (
+    await response.json()
+  ) as
+    PersonalizationPreferenceResponse;
+}

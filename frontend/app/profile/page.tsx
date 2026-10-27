@@ -11,6 +11,8 @@ import {
 import {
   deleteMemory,
   getMemories,
+  getPersonalizationPreference,
+  updatePersonalizationPreference,
 } from "@/lib/memory";
 
 import type {
@@ -225,6 +227,32 @@ export default function ProfilePage() {
   ] = useState<string | null>(null);
 
 
+  const [
+    personalizationEnabled,
+    setPersonalizationEnabled,
+  ] = useState(false);
+
+  const [
+    personalizationLoading,
+    setPersonalizationLoading,
+  ] = useState(true);
+
+  const [
+    personalizationSaving,
+    setPersonalizationSaving,
+  ] = useState(false);
+
+  const [
+    personalizationError,
+    setPersonalizationError,
+  ] = useState<string | null>(null);
+
+  const [
+    personalizationNotice,
+    setPersonalizationNotice,
+  ] = useState<string | null>(null);
+
+
   const loadMemories =
     useCallback(
       async () => {
@@ -311,6 +339,42 @@ export default function ProfilePage() {
   }, []);
 
 
+  useEffect(() => {
+    let active = true;
+
+    async function loadPersonalization() {
+      try {
+        const result = await getPersonalizationPreference();
+
+        if (active) {
+          setPersonalizationEnabled(
+            result.allow_personalized_recommendations
+          );
+          setPersonalizationError(null);
+        }
+      } catch (caught) {
+        if (active) {
+          setPersonalizationError(
+            caught instanceof Error
+              ? caught.message
+              : "Personalization preference could not be loaded."
+          );
+        }
+      } finally {
+        if (active) {
+          setPersonalizationLoading(false);
+        }
+      }
+    }
+
+    void loadPersonalization();
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+
   async function handleEmailPreferenceChange(
     enabled: boolean,
   ) {
@@ -337,6 +401,42 @@ export default function ProfilePage() {
       );
     } finally {
       setPreferenceSaving(false);
+    }
+  }
+
+
+  async function handlePersonalizationChange(
+    enabled: boolean,
+  ) {
+    if (personalizationSaving || personalizationLoading) {
+      return;
+    }
+
+    const previous = personalizationEnabled;
+    setPersonalizationEnabled(enabled);
+    setPersonalizationSaving(true);
+    setPersonalizationError(null);
+    setPersonalizationNotice(null);
+
+    try {
+      const result = await updatePersonalizationPreference(enabled);
+      setPersonalizationEnabled(
+        result.allow_personalized_recommendations
+      );
+      setPersonalizationNotice(
+        enabled
+          ? "Personalized recommendations enabled."
+          : "Personalized recommendations disabled."
+      );
+    } catch (caught) {
+      setPersonalizationEnabled(previous);
+      setPersonalizationError(
+        caught instanceof Error
+          ? caught.message
+          : "Personalization preference could not be saved."
+      );
+    } finally {
+      setPersonalizationSaving(false);
     }
   }
 
@@ -523,6 +623,76 @@ export default function ProfilePage() {
             </div>
           )
         }
+
+
+        <section
+          aria-labelledby="personalization-heading"
+          className="mt-6 rounded-3xl border border-[#dccbc4] bg-[#fffaf7] p-5 shadow-sm sm:p-6"
+        >
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#7f2a3c]">
+            Personalization
+          </p>
+          <h2
+            id="personalization-heading"
+            className="mt-1 text-xl font-semibold text-[#332e34]"
+          >
+            Personalized recommendations
+          </h2>
+          <p className="mt-2 text-sm leading-6 text-[#756369]">
+            Allow Retailigent to use your saved shopping preferences and
+            remembered facts when ranking recommendations. Current-message
+            filters always remain hard constraints.
+          </p>
+
+          <div className="mt-4 flex flex-col gap-4 rounded-2xl border border-[#e2d5cf] bg-white/80 p-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="font-semibold text-[#332e34]">
+                Use saved preferences
+              </p>
+              <p className="mt-1 text-sm text-[#756369]">
+                {personalizationEnabled
+                  ? "Recommendations may use your saved preferences."
+                  : "Saved preferences will not affect recommendations."}
+              </p>
+            </div>
+
+            <button
+              type="button"
+              role="switch"
+              aria-checked={personalizationEnabled}
+              aria-label="Use saved preferences for recommendations"
+              disabled={personalizationLoading || personalizationSaving}
+              onClick={() => {
+                void handlePersonalizationChange(!personalizationEnabled);
+              }}
+              className={`inline-flex min-h-11 shrink-0 items-center justify-center rounded-xl px-5 py-2.5 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-50 ${
+                personalizationEnabled
+                  ? "bg-[#7f2a3c] text-white hover:bg-[#682132]"
+                  : "border border-[#dccbc4] bg-white text-[#674f56] hover:bg-[#f7ece7]"
+              }`}
+            >
+              {personalizationLoading
+                ? "Loading..."
+                : personalizationSaving
+                  ? "Saving..."
+                  : personalizationEnabled
+                    ? "Enabled"
+                    : "Disabled"}
+            </button>
+          </div>
+
+          {personalizationError && (
+            <p role="alert" className="mt-3 text-sm text-[#9b352e]">
+              {personalizationError}
+            </p>
+          )}
+
+          {personalizationNotice && (
+            <p role="status" className="mt-3 text-sm text-[#356b45]">
+              {personalizationNotice}
+            </p>
+          )}
+        </section>
 
 
         <section
