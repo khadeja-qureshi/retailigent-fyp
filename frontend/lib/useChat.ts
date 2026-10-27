@@ -29,6 +29,8 @@ import type {
 const IDLE_FINALIZE_MS =
    2 * 60 * 1000;
 
+const ACTIVE_CONVERSATION_STORAGE_KEY =
+  "retailigent_active_conversation_id";
 
 function temporaryId(
   prefix: string
@@ -91,6 +93,9 @@ export function useChat() {
       null
     );
 
+  const restoreAttemptedRef = useRef(false);
+  const [isRestoringConversation, setIsRestoringConversation] =
+  useState(true);
 
   const refreshConversations =
     useCallback(async () => {
@@ -301,6 +306,10 @@ export function useChat() {
                   setConversationId(
                     data.conversation_id
                   );
+                  window.localStorage.setItem(
+                  ACTIVE_CONVERSATION_STORAGE_KEY,
+                  data.conversation_id
+                  );
 
                   break;
                 }
@@ -387,6 +396,10 @@ export function useChat() {
 
                   setConversationId(
                     data.conversation_id
+                  );
+                  window.localStorage.setItem(
+                  ACTIVE_CONVERSATION_STORAGE_KEY,
+                  data.conversation_id
                   );
 
                   updateAssistantMessage(
@@ -533,6 +546,10 @@ export function useChat() {
             );
           }
 
+          window.localStorage.removeItem(
+          ACTIVE_CONVERSATION_STORAGE_KEY
+          );
+
           setConversationId(
             null
           );
@@ -621,6 +638,10 @@ export function useChat() {
           setConversationId(
             history.conversation.id
           );
+          window.localStorage.setItem(
+          ACTIVE_CONVERSATION_STORAGE_KEY,
+          history.conversation.id
+          );
 
           setMessages(
             history.messages.map(
@@ -659,6 +680,27 @@ export function useChat() {
       ]
     );
 
+useEffect(() => {
+  if (restoreAttemptedRef.current) {
+    return;
+  }
+
+  restoreAttemptedRef.current = true;
+
+  const savedConversationId =
+    window.localStorage.getItem(
+      ACTIVE_CONVERSATION_STORAGE_KEY
+    );
+
+  if (!savedConversationId) {
+    setIsRestoringConversation(false);
+    return;
+  }
+
+  void loadConversation(savedConversationId).finally(() => {
+    setIsRestoringConversation(false);
+  });
+}, [loadConversation]);
 
   return {
     messages,
@@ -666,6 +708,7 @@ export function useChat() {
     conversations,
     isSending,
     isHistoryLoading,
+    isRestoringConversation,
     error,
     sendMessage,
     stop,

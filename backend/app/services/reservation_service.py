@@ -87,6 +87,65 @@ def _get_owned_reservation(
 
     return rows[0]
 
+def _enrich_reservation(
+    reservation: dict[str, Any],
+) -> dict[str, Any]:
+    variant_id = str(
+        reservation.get("variant_id") or ""
+    )
+    branch_id = str(
+        reservation.get("branch_id") or ""
+    )
+
+    variant = None
+    product = None
+    branch = None
+
+    if variant_id:
+        variant_response = (
+            supabase_admin
+            .table("product_variants")
+            .select(
+                "id, product_id, sku, price, "
+                "color_id, size_id"
+            )
+            .eq("id", variant_id)
+            .limit(1)
+            .execute()
+        )
+        variant_rows = _safe_data(variant_response)
+        variant = variant_rows[0] if variant_rows else None
+
+    if variant and variant.get("product_id"):
+        product_response = (
+            supabase_admin
+            .table("products")
+            .select("id, name, sku, brand, base_price")
+            .eq("id", str(variant["product_id"]))
+            .limit(1)
+            .execute()
+        )
+        product_rows = _safe_data(product_response)
+        product = product_rows[0] if product_rows else None
+
+    if branch_id:
+        branch_response = (
+            supabase_admin
+            .table("branches")
+            .select("id, name, city, area, address")
+            .eq("id", branch_id)
+            .limit(1)
+            .execute()
+        )
+        branch_rows = _safe_data(branch_response)
+        branch = branch_rows[0] if branch_rows else None
+
+    return {
+        **reservation,
+        "variant": variant,
+        "product": product,
+        "branch": branch,
+    }
 
 # ---------------------------------------------------------------------------
 # Get customer reservations
@@ -557,7 +616,7 @@ def create_customer_reservation(
     )
 
 
-    return reservation
+    return _enrich_reservation(reservation)
 
 
 # ---------------------------------------------------------------------------

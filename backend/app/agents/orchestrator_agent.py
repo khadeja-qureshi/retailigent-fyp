@@ -41,6 +41,7 @@ from app.schemas.chat import (
     OrderConfirmationBlock,
     ParsedCustomerMessage,
     ProductCard,
+    ReservationBlock,
     RecommendationBlock,
     ProductCarouselBlock,
     SmartCartRuleBlock,
@@ -52,6 +53,10 @@ from app.services import chat_service, feedback_service
 from app.services.feedback_service import (
     FeedbackServiceError,
 )
+from app.services.reservation_service import (
+    create_customer_reservation,
+)
+
 from app.services.cart_service import (
     add_cart_item,
 )
@@ -376,6 +381,26 @@ def resolve_variant_reference(
             return str(
                 last_variant_id
             )
+    # A reservation can refer to "1 item" without
+    # using a pronoun. Reuse context only when the
+    # immediately preceding intent was a stock check
+    # and that search identified exactly one variant.
+    if (
+        parsed.intent == "reservation_create"
+        and state.get("last_intent") == "stock_check"
+    ):
+        last_search_variant_ids = (
+            state.get("last_search_variant_ids") or []
+        )
+
+        if len(last_search_variant_ids) == 1:
+            return str(last_search_variant_ids[0])
+
+        if (
+            not last_search_variant_ids
+            and state.get("last_variant_id")
+        ):
+            return str(state["last_variant_id"])
 
     return None
 
@@ -508,6 +533,16 @@ def plan_intent(
             tool_name=(
                 "inventory_agent."
                 "get_stock_snapshot_with_branches"
+            ),
+        )
+
+    if intent == "reservation_create":
+        return PlannedTask(
+            agent_key="orchestrator_agent",
+            task_type="create_reservation",
+            tool_name=(
+                "reservation_service."
+                "create_customer_reservation"
             ),
         )
 
@@ -833,17 +868,23 @@ def build_stock_status_block(
         ):
             continue
 
-        status = (
-            row.get(
-                "status"
-            )
-        )
+        status = row.get("status")
 
         if status not in {
             "out_of_stock",
             "low_stock",
             "available",
         }:
+            continue
+
+        available_quantity = int(
+            row.get("available_quantity") or 0
+        )
+
+        # General availability queries should show only branches
+        # with positive stock. Explicit branch checks must still
+        # show out-of-stock results for that requested branch.
+        if not branch_name and available_quantity <= 0:
             continue
 
         branches.append(
@@ -1630,6 +1671,76 @@ class OrchestratorAgent:
                     )
                 )
 
+                if (
+                    not variant_ids
+                    and (
+                        parsed.entities.category
+                        or parsed.entities.product_name
+                    )
+                ):
+                    search_plan = plan_intent(
+                        "product_search"
+                    )
+
+                    assert search_plan is not None
+
+                    search_arguments = {
+                        "query": parsed.raw_message,
+                        "match_count": 10,
+                        "color": parsed.entities.color,
+                        "size": parsed.entities.size,
+                        "material": parsed.entities.material,
+                        "category": parsed.entities.category,
+                        "min_price": parsed.entities.min_price,
+                        "max_price": parsed.entities.max_price,
+                        "track_demand": True,
+                        "customer_id": customer_id,
+                    }
+
+                    search_results = self._run_traced_tool(
+                        run_id=run_id,
+                        plan=search_plan,
+                        arguments=search_arguments,
+                        call=lambda: product_agent.search(
+                            **search_arguments
+                        ),
+                    )
+
+                    search_block = build_product_carousel(
+                        search_results
+                    )
+
+                    variant_ids = [
+                        product.variant_id
+                        for product in search_block.products
+                    ]
+
+                    if not variant_ids:
+                        return self._finish_clarification(
+                            customer_id=customer_id,
+                            conversation_id=conversation_id,
+                            run_id=run_id,
+                            parsed=parsed,
+                            content=(
+                                customer_interaction_agent
+                                .compose_search_response(
+                                    parsed.language,
+                                    0,
+                                )
+                            ),
+                        )
+
+                    chat_service.merge_conversation_state(
+                        customer_id,
+                        conversation_id,
+                        {
+                            "last_search_variant_ids": variant_ids,
+                            "last_variant_id": variant_ids[0],
+                            "last_intent": parsed.intent,
+                            "language": parsed.language,
+                        },
+                    )
+
                 if not variant_ids:
                     return (
                         self
@@ -1918,6 +2029,217 @@ class OrchestratorAgent:
 
                 blocks = list(
                     stock_blocks
+                )
+
+            elif parsed.intent == "reservation_create":
+                variant_id = resolve_variant_reference(
+                    parsed,
+                    state,
+                )
+
+                if not variant_id:
+                    return self._finish_clarification(
+                        customer_id=customer_id,
+                        conversation_id=conversation_id,
+                        run_id=run_id,
+                        parsed=parsed,
+                        content=(
+                            customer_interaction_agent
+                            .compose_item_reference_clarification(
+                                parsed.language
+                            )
+                        ),
+                    )
+
+                branch_name = parsed.entities.branch_name
+
+                if not branch_name:
+                    return self._finish_clarification(
+                        customer_id=customer_id,
+                        conversation_id=conversation_id,
+                        run_id=run_id,
+                        parsed=parsed,
+                        content=(
+                            "Which branch would you like to reserve it at? "
+                            "Please specify the branch name."
+                            if parsed.language == "english"
+                            else
+                            "Kis branch se reserve karna hai? "
+                            "Please branch ka naam batayein."
+                        ),
+                    )
+
+                quantity = parsed.entities.quantity or 1
+
+                if quantity < 1:
+                    return self._finish_clarification(
+                        customer_id=customer_id,
+                        conversation_id=conversation_id,
+                        run_id=run_id,
+                        parsed=parsed,
+                        content="Please request a quantity of at least 1.",
+                    )
+
+                inventory_rows = (
+                    inventory_agent.get_stock_snapshot_with_branches(
+                        variant_id
+                    )
+                    or []
+                )
+
+                requested_branch = (
+                    branch_name.strip().casefold()
+                )
+
+                def branch_matches(row):
+                    actual_name = str(
+                        (row.get("branch") or {}).get("name") or ""
+                    ).strip().casefold()
+
+                    if actual_name == requested_branch:
+                        return True
+
+                    normalized_actual = re.sub(
+                        r"[\s_]+", " ", actual_name
+                    )
+                    normalized_requested = re.sub(
+                        r"[\s_]+", " ", requested_branch
+                    )
+
+                    return bool(
+                        re.fullmatch(
+                            r"(?:.+\s-\s)?"
+                            + re.escape(normalized_requested),
+                            normalized_actual,
+                        )
+                    )
+
+                matching_rows = [
+                    row
+                    for row in inventory_rows
+                    if branch_matches(row)
+                ]
+
+                matching_row = (
+                    matching_rows[0]
+                    if len(matching_rows) == 1
+                    else None
+                )
+
+                if matching_row is None:
+                    available_branches = sorted(
+                        {
+                            str(
+                                (row.get("branch") or {}).get("name")
+                                or ""
+                            ).strip()
+                            for row in inventory_rows
+                            if (
+                                (row.get("branch") or {}).get("name")
+                            )
+                        }
+                    )
+
+                    branch_options = (
+                        ", ".join(available_branches)
+                        if available_branches
+                        else "no active branches currently listed"
+                    )
+
+                    return self._finish_clarification(
+                        customer_id=customer_id,
+                        conversation_id=conversation_id,
+                        run_id=run_id,
+                        parsed=parsed,
+                        content=(
+                            f"I couldn't find that branch for this item. "
+                            f"Available branches: {branch_options}."
+                        ),
+                    )
+
+                available_quantity = int(
+                    matching_row.get("available_quantity") or 0
+                )
+
+                if available_quantity < quantity:
+                    return self._finish_clarification(
+                        customer_id=customer_id,
+                        conversation_id=conversation_id,
+                        run_id=run_id,
+                        parsed=parsed,
+                        content=(
+                            f"Only {available_quantity} unit(s) are currently "
+                            f"available at {branch_name}. Please choose a "
+                            "smaller quantity or another branch."
+                        ),
+                    )
+
+                branch_id = str(matching_row["branch_id"])
+
+                plan = plan_intent(parsed.intent)
+                assert plan is not None
+
+                arguments = {
+                    "variant_id": variant_id,
+                    "branch_id": branch_id,
+                    "quantity": quantity,
+                    "hold_minutes": 15,
+                }
+
+                try:
+                    reservation = self._run_traced_tool(
+                        run_id=run_id,
+                        plan=plan,
+                        arguments=arguments,
+                        call=lambda: create_customer_reservation(
+                            customer_id=customer_id,
+                            variant_id=variant_id,
+                            branch_id=branch_id,
+                            quantity=quantity,
+                            hold_minutes=15,
+                        ),
+                    )
+                except Exception:
+                    logger.exception(
+                        "Chat reservation failed for conversation %s",
+                        conversation_id,
+                    )
+
+                    return self._finish_clarification(
+                        customer_id=customer_id,
+                        conversation_id=conversation_id,
+                        run_id=run_id,
+                        parsed=parsed,
+                        content=(
+                            "I couldn't complete that reservation. "
+                            "Stock may have changed, so please check "
+                            "availability and try again."
+                        ),
+                    )
+
+                reservation_id = str(reservation["id"])
+
+                chat_service.merge_conversation_state(
+                    customer_id,
+                    conversation_id,
+                    {
+                        "last_intent": parsed.intent,
+                        "last_variant_id": variant_id,
+                        "last_reservation_id": reservation_id,
+                        "last_reservation_variant_id": variant_id,
+                        "language": parsed.language,
+                    },
+                )
+
+                blocks = [
+                    ReservationBlock(reservation=reservation)
+                ]
+
+                content = (
+                    f"Your reservation is confirmed for {quantity} "
+                    f"unit(s) at {branch_name}. The hold expires at "
+                    f"{reservation.get('expires_at')}. This is a temporary "
+                    "reservation, not a completed purchase."
                 )
 
             elif (

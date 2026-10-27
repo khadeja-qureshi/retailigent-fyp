@@ -1932,3 +1932,72 @@ def test_failed_support_ticket_has_no_success_block(
         "last_support_ticket_id"
         not in fake_persistence
     )
+def test_general_stock_check_excludes_branches_with_zero_stock():
+    inventory = [
+        {
+            "branch_id": "branch-1",
+            "available_quantity": 0,
+            "status": "out_of_stock",
+            "branch": {
+                "id": "branch-1",
+                "name": "Gulberg",
+                "city": "Lahore",
+            },
+        },
+        {
+            "branch_id": "branch-2",
+            "available_quantity": 5,
+            "status": "available",
+            "branch": {
+                "id": "branch-2",
+                "name": "Phase 6",
+                "city": "Karachi",
+            },
+        },
+    ]
+
+    block = orchestrator_module.build_stock_status_block(
+        "variant-1",
+        inventory,
+    )
+
+    assert [branch.branch_name for branch in block.branches] == [
+        "Phase 6",
+    ]
+    assert block.branches[0].available_quantity == 5
+
+
+def test_explicit_branch_stock_check_preserves_zero_stock_result():
+    inventory = [
+        {
+            "branch_id": "branch-1",
+            "available_quantity": 0,
+            "status": "out_of_stock",
+            "branch": {
+                "id": "branch-1",
+                "name": "Gulberg",
+                "city": "Lahore",
+            },
+        },
+        {
+            "branch_id": "branch-2",
+            "available_quantity": 5,
+            "status": "available",
+            "branch": {
+                "id": "branch-2",
+                "name": "Phase 6",
+                "city": "Karachi",
+            },
+        },
+    ]
+
+    block = orchestrator_module.build_stock_status_block(
+        "variant-1",
+        inventory,
+        branch_name="Gulberg",
+    )
+
+    assert len(block.branches) == 1
+    assert block.branches[0].branch_name == "Gulberg"
+    assert block.branches[0].available_quantity == 0
+    assert block.branches[0].status == "out_of_stock"

@@ -1,4 +1,5 @@
-﻿from app.agents.customer_interaction_agent import (
+﻿import pytest
+from app.agents.customer_interaction_agent import (
     customer_interaction_agent,
     detect_language,
 )
@@ -354,3 +355,35 @@ def test_product_search_still_works():
         "Show me blue kurtas size M"
     )
     assert parsed.intent == "product_search"
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        "Do you have blue kurtas in size M?",
+        "Do you have this in stock?",
+        "Is this item available?",
+        "Blue kurta size M mil jayega?",
+        "Black shirt stock mein hai kya?",
+        "Do you sell white kurtas?",
+    ],
+)
+def test_availability_questions_detect_stock_check(message):
+    parsed = customer_interaction_agent.parse(message)
+
+    assert parsed.intent == "stock_check"
+
+
+def test_vague_availability_question_is_recognized():
+    parsed = customer_interaction_agent.parse("Do you have this?")
+
+    assert parsed.intent == "stock_check"
+
+
+def test_product_search_still_works_after_availability_detection():
+    parsed = customer_interaction_agent.parse(
+        "Show me blue kurtas size M"
+    )
+
+    assert parsed.intent == "product_search"
+    assert parsed.entities.color == "Blue"
+    assert parsed.entities.size == "M"

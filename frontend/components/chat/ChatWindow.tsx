@@ -284,6 +284,8 @@ export default function ChatWindow() {
 
     isHistoryLoading,
 
+    isRestoringConversation,
+
     error,
 
     sendMessage,
@@ -622,8 +624,13 @@ export default function ChatWindow() {
           <section className="min-h-0 flex-1 px-3 sm:px-6 lg:px-8">
             <div className="mx-auto flex min-h-[50vh] max-w-5xl flex-col py-4 sm:py-6">
               {
-                messages.length
-                === 0
+                isRestoringConversation
+                  ? (
+                    <div className="my-auto py-12 text-center text-sm text-[#ad999e]">
+                      Restoring your conversation...
+                    </div>
+                  )
+                  : messages.length === 0
                   ? (
                     <div className="my-auto py-8 text-center sm:py-12">
                       <div className="mx-auto max-w-2xl">

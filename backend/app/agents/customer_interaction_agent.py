@@ -76,6 +76,9 @@ COLOR_ALIASES = {
     "black": "Black",
     "white": "White",
     "blue": "Blue",
+    "teal": "Teal",
+    "turquoise": "Turquoise",
+    "aqua": "Aqua",
     "navy": "Navy",
     "red": "Red",
     "green": "Green",
@@ -119,6 +122,18 @@ CATEGORY_ALIASES = {
     "dupattas": "dupatta",
     "shalwar": "shalwar",
     "kameez": "kameez",
+    "bag": "bag",
+    "bags": "bag",
+    "tote bag": "bag",
+    "tote bags": "bag",
+    "tote": "bag",
+    "totes": "bag",
+    "handbag": "bag",
+    "handbags": "bag",
+    "hand bag": "bag",
+    "hand bags": "bag",
+    "purse": "bag",
+    "purses": "bag",
 }
 
 
@@ -126,6 +141,8 @@ BRANCH_ALIASES = {
     "gulberg": "Gulberg",
     "clifton": "Clifton",
     "dha": "DHA",
+    "f-10": "F-10",
+    "f 10": "F-10",
 }
 
 
@@ -1237,18 +1254,44 @@ def classify_intent(
     ):
         return "reservation_create"
 
-    if _contains_any(
-        text,
-        {
-            "in stock",
-            "stock mein",
-            "stock me",
-            "available",
-            "availability",
-            "stock available",
-            "stock check",
-        },
-    ):
+    availability_question = (
+        _contains_any(
+            text,
+            {
+                "in stock",
+                "stock mein",
+                "stock me",
+                "available",
+                "availability",
+                "stock available",
+                "stock check",
+                "do you have",
+                "does this come in",
+                "does it come in",
+                "have you got",
+                "have you got any",
+                "got any",
+                "do you sell",
+                "is there any",
+                "is this available",
+                "is it available",
+                "is this in stock",
+                "is it in stock",
+                "hai kya",
+                "milta hai",
+                "milti hai",
+                "mil jayega",
+                "mil jaega",
+                "mil sakta hai",
+                "maujood hai",
+                "rakhte ho",
+                "stock mein hai",
+                "stock me hai",
+            },
+        )
+    )
+
+    if availability_question:
         return "stock_check"
 
     if _contains_any(
