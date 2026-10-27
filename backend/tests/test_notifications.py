@@ -1048,46 +1048,58 @@ def test_commerce_notification_queues_email_when_opted_in():
         }
 
 
-        assert (
-            by_channel[
-                "in_app"
-            ][
-                "status"
-            ]
-            ==
-            "pending"
-        )
+        # Phase 17 starts a background notification worker.
+        # If the backend is running while this integration test
+        # executes, the worker may atomically claim a just-created
+        # delivery between create_notification() and this SELECT.
+        # Therefore "pending" is not a stable observable state.
+        #
+        # This test proves the responsibility of create_notification():
+        # an opted-in commerce notification creates BOTH delivery
+        # channels. Delivery lifecycle/state transitions are covered
+        # separately by the worker tests above.
+        valid_delivery_states = {
+            "pending",
+            "processing",
+            "sent",
+            "failed",
+        }
 
 
-        assert (
-            by_channel[
-                "email"
-            ][
-                "status"
-            ]
-            ==
-            "pending"
-        )
+        for channel in (
+            "in_app",
+            "email",
+        ):
+            row = by_channel[channel]
 
+            assert (
+                row["status"]
+                in
+                valid_delivery_states
+            )
 
-        assert (
-            by_channel[
-                "in_app"
-            ][
-                "attempts"
-            ]
-            == 0
-        )
+            attempts = int(
+                row.get(
+                    "attempts",
+                    0,
+                )
+                or 0
+            )
 
+            assert attempts >= 0
 
-        assert (
-            by_channel[
-                "email"
-            ][
-                "attempts"
-            ]
-            == 0
-        )
+            if (
+                row["status"]
+                ==
+                "pending"
+            ):
+                # A never-claimed row must still be untouched.
+                assert attempts == 0
+
+            else:
+                # claim_notification_deliveries() increments attempts
+                # atomically when it moves a row to processing.
+                assert attempts >= 1
 
 
     finally:

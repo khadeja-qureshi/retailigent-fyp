@@ -6,7 +6,6 @@ from app.workers.scheduler import (
     reservation_scheduler_loop,
 )
 import os
-import time
 from datetime import (
     datetime,
     timedelta,
@@ -37,6 +36,80 @@ CUSTOMER_ID = os.getenv(
 VARIANT_ID = os.getenv(
     "TEST_VARIANT_ID"
 )
+
+
+# Integration tests talk to hosted Supabase over the network.
+# A two-second client-generated expiry is inherently flaky because
+# request latency and small client/server clock differences can make
+# it expired before create_reservation() executes.
+#
+# Create the fixture with a safely future expiry, then deliberately
+# move only that test reservation into the past after creation.
+# This keeps the production RPC strict while making the scheduler
+# tests deterministic and fast.
+SAFE_FUTURE_EXPIRY = timedelta(
+    hours=1
+)
+
+FORCED_EXPIRED_AT = (
+    "2000-01-01T00:00:00+00:00"
+)
+
+
+def force_reservation_expired(
+    reservation_id: str,
+) -> None:
+    response = (
+        supabase_admin
+        .table(
+            "reservations"
+        )
+        .update(
+            {
+                "expires_at":
+                    FORCED_EXPIRED_AT,
+            }
+        )
+        .eq(
+            "id",
+            reservation_id,
+        )
+        .execute()
+    )
+
+    # Depending on PostgREST return preferences, update() may return
+    # zero rows in response.data even though it succeeded. Read the
+    # row back explicitly so the test proves the fixture is expired.
+    verify = (
+        supabase_admin
+        .table(
+            "reservations"
+        )
+        .select(
+            "id, expires_at"
+        )
+        .eq(
+            "id",
+            reservation_id,
+        )
+        .limit(1)
+        .execute()
+    )
+
+    assert verify.data, (
+        "Reservation disappeared while "
+        "forcing test expiry."
+    )
+
+    expires_at = str(
+        verify.data[0][
+            "expires_at"
+        ]
+    )
+
+    assert expires_at.startswith(
+        "2000-01-01"
+    )
 
 
 def get_active_test_branch(
@@ -352,7 +425,7 @@ def test_expired_reservation_releases_stock():
 
     expires_at = (
         datetime.now(timezone.utc)
-        + timedelta(seconds=2)
+        + SAFE_FUTURE_EXPIRY
     )
 
     reservation_id = None
@@ -410,7 +483,9 @@ def test_expired_reservation_releases_stock():
             - 1
         )
 
-        time.sleep(3)
+        force_reservation_expired(
+            reservation_id
+        )
 
         release_expired_reservations()
 
@@ -442,7 +517,10 @@ def test_scheduler_automatically_expires_reservation_and_restores_stock():
     branch_id = branch["branch_id"]
     before = get_inventory_snapshot(branch_id)
 
-    expires_at = datetime.now(timezone.utc) + timedelta(seconds=2)
+    expires_at = (
+        datetime.now(timezone.utc)
+        + SAFE_FUTURE_EXPIRY
+    )
     reservation_id = None
 
     try:
@@ -465,6 +543,10 @@ def test_scheduler_automatically_expires_reservation_and_restores_stock():
         )
         assert after_create["available_quantity"] == (
             before["available_quantity"] - 1
+        )
+
+        force_reservation_expired(
+            reservation_id
         )
 
         async def exercise_scheduler():

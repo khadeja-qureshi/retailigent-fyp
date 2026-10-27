@@ -134,6 +134,27 @@ CATEGORY_ALIASES = {
     "hand bags": "bag",
     "purse": "bag",
     "purses": "bag",
+
+    # Footwear aliases.  These all map to the top-level
+    # database category ``Footwear``.  Child categories such
+    # as ``footwear-women`` and ``footwear-men`` still match
+    # because ProductAgent compares normalized category/slug
+    # tokens.
+    "footwear": "footwear",
+    "shoe": "footwear",
+    "shoes": "footwear",
+    "sneaker": "footwear-shoes",
+    "sneakers": "footwear-shoes",
+    "trainer": "footwear-shoes",
+    "trainers": "footwear-shoes",
+    "sandal": "footwear-heels",
+    "sandals": "footwear-heels",
+    "slipper": "footwear-slippers",
+    "slippers": "footwear-slippers",
+    "khussa": "footwear-khussa",
+    "khussas": "footwear-khussa",
+    "heel": "footwear-heels",
+    "heels": "footwear-heels",
 }
 
 
@@ -143,6 +164,9 @@ BRANCH_ALIASES = {
     "dha": "DHA",
     "f-10": "F-10",
     "f 10": "F-10",
+    "karachi": "Karachi",
+    "lahore": "Lahore",
+    "islamabad": "Islamabad",
 }
 
 
@@ -288,11 +312,38 @@ def _extract_product_name(
     text: str,
 ) -> str | None:
     """
-    Extract a product phrase from natural
-    branch/location questions.
+    Extract an explicitly named product from common customer actions.
+
+    Examples:
+      "Do you have Classic Cotton Casual Shirt in size M?"
+        -> "Classic Cotton Casual Shirt"
+
+      "Add Classic Cotton Casual Shirt to cart"
+        -> "Classic Cotton Casual Shirt"
+
+      "Add Classic Cotton Casual Shirt to cart and wishlist"
+        -> "Classic Cotton Casual Shirt"
+
+      "Which branch has Classic Cotton Casual Shirt?"
+        -> "Classic Cotton Casual Shirt"
     """
 
     patterns = [
+        (
+            r"^\s*(?:do\s+you\s+have|have\s+you\s+got|"
+            r"do\s+you\s+sell|is\s+there\s+any)\s+"
+            r"(.+?)"
+            r"(?:[?.!]|$)"
+        ),
+        (
+            r"^\s*(?:add|put|save)\s+"
+            r"(.+?)\s+"
+            r"(?:to|in|into)\s+"
+            r"(?:my\s+|the\s+)?"
+            r"(?:cart|wishlist|shopping\s+cart)"
+            r"(?:\s+and\s+(?:cart|wishlist))?"
+            r"(?:[?.!]|$)"
+        ),
         (
             r"\bwhich\s+"
             r"(?:branch|store)\s+"
@@ -318,18 +369,112 @@ def _extract_product_name(
         if not match:
             continue
 
-        value = (
-            match.group(1).strip()
+        value = match.group(1).strip()
+
+        # Action quantities belong to the quantity entity, not the
+        # catalog product name.
+        #
+        #   "Add 3 Classic Cotton Casual Shirts to Cart"
+        #       -> "Classic Cotton Casual Shirts"
+        value = re.sub(
+            r"^\s*\d+\s+(?:x\s+)?",
+            "",
+            value,
+            count=1,
+            flags=re.IGNORECASE,
+        ).strip()
+
+        # Ordinal/context stock questions must resolve against the
+        # previous result set. They are not literal product titles.
+        #
+        #   "Do you have 500 of the second kurta in stock?"
+        #       product_name = None
+        #       ordinal_reference = 2
+        ordinal_words = "|".join(
+            sorted(
+                (re.escape(word) for word in ORDINAL_ALIASES),
+                key=len,
+                reverse=True,
+            )
         )
 
-        # "Which branch has size M?"
-        # means refine previous product context,
-        # not a product literally called "size M".
+        if re.search(
+            rf"\b(?:{ordinal_words})\b",
+            value,
+            flags=re.IGNORECASE,
+        ):
+            return None
+
+        value = re.sub(
+            r"\s+\b(?:in\s+)?size\s+"
+            r"(?:xxl|xl|xs|s|m|l|small|medium|large|"
+            r"extra\s+small|extra\s+large|\d{2})\b.*$",
+            "",
+            value,
+            flags=re.IGNORECASE,
+        ).strip()
+
+        value = re.sub(
+            r"\s+\b(?:at|in)\s+"
+            r"[a-z0-9\-\s']+\s+"
+            r"(?:branch|store|shop|location)\b.*$",
+            "",
+            value,
+            flags=re.IGNORECASE,
+        ).strip()
+
+        value = re.sub(
+            r"\s+\b(?:in\s+stock|available|availability)\b\s*$",
+            "",
+            value,
+            flags=re.IGNORECASE,
+        ).strip()
+
         if re.match(
             r"^(?:size|stock|availability)\b",
             value,
             flags=re.IGNORECASE,
         ):
+            return None
+
+        if value.casefold() in {
+            "",
+            "it",
+            "this",
+            "this item",
+            "that",
+            "that item",
+            "the item",
+            "first one",
+            "second one",
+            "third one",
+            "the first one",
+            "the second one",
+            "the third one",
+        }:
+            return None
+
+        # A phrase made only of structured attributes is not an exact
+        # product name. Example: "blue khaddar shirt" should remain
+        # color=Blue, material=Khaddar, category=shirt instead of being
+        # treated as a literal product title.
+        generic_tokens = {
+            *COLOR_ALIASES.keys(),
+            *MATERIAL_ALIASES.keys(),
+            *CATEGORY_ALIASES.keys(),
+            "the",
+            "a",
+            "an",
+            "product",
+            "item",
+        }
+        residual_tokens = [
+            token
+            for token in re.findall(r"[a-z0-9]+", value.casefold())
+            if token not in generic_tokens
+        ]
+
+        if not residual_tokens:
             return None
 
         return value
@@ -388,6 +533,8 @@ def _extract_branch(
 def _extract_size(
     text: str,
 ) -> str | None:
+    # Explicit "size X" form. Supports both clothing sizes
+    # (S/M/L/XL) and numeric footwear sizes such as 38, 39, 40, 41.
     size_first_match = re.search(
         r"\b"
         r"(?:my\s+|usual\s+|preferred\s+)?"
@@ -396,7 +543,8 @@ def _extract_size(
         r"[:\-]?\s*"
         r"(xxl|xl|xs|s|m|l|"
         r"small|medium|large|"
-        r"extra small|extra large)"
+        r"extra small|extra large|"
+        r"\d{2})"
         r"\b",
         text,
         flags=re.IGNORECASE,
@@ -409,13 +557,18 @@ def _extract_size(
             .lower()
         )
 
+        if raw.isdigit():
+            return raw
+
         return SIZE_ALIASES.get(raw)
 
+    # "40 size" / "M size" form.
     size_last_match = re.search(
         r"\b"
         r"(xxl|xl|xs|s|m|l|"
         r"small|medium|large|"
-        r"extra small|extra large)"
+        r"extra small|extra large|"
+        r"\d{2})"
         r"\s+size\b",
         text,
         flags=re.IGNORECASE,
@@ -428,18 +581,33 @@ def _extract_size(
             .lower()
         )
 
+        if raw.isdigit():
+            return raw
+
         return SIZE_ALIASES.get(raw)
 
+    # Product immediately followed by a size.
+    # Examples:
+    #   "shirt M"
+    #   "sneakers 40"
     product_size_match = re.search(
         r"\b"
         r"(?:kurta|kurtas|"
         r"shirt|shirts|"
         r"dress|dresses|"
-        r"suit|suits)"
+        r"suit|suits|"
+        r"shoe|shoes|"
+        r"sneaker|sneakers|"
+        r"trainer|trainers|"
+        r"sandal|sandals|"
+        r"slipper|slippers|"
+        r"khussa|khussas|"
+        r"heel|heels)"
         r"\s+"
         r"(xxl|xl|xs|s|m|l|"
         r"small|medium|large|"
-        r"extra small|extra large)"
+        r"extra small|extra large|"
+        r"\d{2})"
         r"\b",
         text,
         flags=re.IGNORECASE,
@@ -452,10 +620,12 @@ def _extract_size(
             .lower()
         )
 
+        if raw.isdigit():
+            return raw
+
         return SIZE_ALIASES.get(raw)
 
     return None
-
 
 def _extract_ordinals(
     text: str,
@@ -517,6 +687,16 @@ def _extract_quantity(
     text: str,
 ) -> int | None:
     patterns = [
+        # "Add 3 Classic Cotton Casual Shirts to Cart"
+        (
+            r"^\s*(?:add|put|save|buy|purchase|reserve)\s+"
+            r"(\d+)\b"
+        ),
+        # "Do you have 500 of the second kurta in stock?"
+        (
+            r"\b(?:do\s+you\s+have|have)\s+"
+            r"(\d+)\s+(?:of\b|\b)"
+        ),
         (
             r"\b(?:quantity|qty)"
             r"\s*[:\-]?\s*(\d+)\b"
@@ -1542,6 +1722,8 @@ def _has_item_reference(
         _has_context_reference(text)
         or
         entities.category
+        or
+        entities.product_name
     )
 
 

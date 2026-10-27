@@ -823,6 +823,332 @@ def build_product_carousel(
     )
 
 
+def _normalize_catalog_text(value: Any) -> str:
+    text = str(value or "").strip().casefold()
+    text = re.sub(r"[^a-z0-9]+", " ", text)
+    return " ".join(text.split())
+
+
+def _result_product_name(result: dict[str, Any]) -> str:
+    return str(
+        (result.get("product") or {}).get("name")
+        or ""
+    ).strip()
+
+
+def _filter_named_product_results(
+    results: list[dict[str, Any]],
+    product_name: str | None,
+) -> list[dict[str, Any]]:
+    """Keep an explicitly named product as a hard constraint."""
+    if not product_name:
+        return list(results)
+
+    requested = _normalize_catalog_text(product_name)
+    requested_tokens = set(requested.split())
+
+    filtered: list[dict[str, Any]] = []
+
+    for result in results:
+        actual = _normalize_catalog_text(
+            _result_product_name(result)
+        )
+
+        if not actual:
+            continue
+
+        if actual == requested:
+            filtered.append(result)
+            continue
+
+        actual_tokens = set(actual.split())
+
+        if not requested_tokens:
+            continue
+
+        coverage = (
+            len(requested_tokens & actual_tokens)
+            / len(requested_tokens)
+        )
+
+        if coverage >= 0.8:
+            filtered.append(result)
+
+    return filtered
+
+
+def _unique_variant_ids_from_results(
+    results: list[dict[str, Any]],
+) -> list[str]:
+    output: list[str] = []
+
+    for result in results:
+        value = result.get("variant_id")
+
+        if not value:
+            continue
+
+        variant_id = str(value)
+
+        if variant_id not in output:
+            output.append(variant_id)
+
+    return output
+
+
+def _inventory_available_quantity(row: dict[str, Any]) -> int:
+    try:
+        return max(
+            0,
+            int(row.get("available_quantity") or 0),
+        )
+    except (TypeError, ValueError):
+        return 0
+
+
+def _location_matches_branch(
+    branch: dict[str, Any],
+    requested_location: str | None,
+) -> bool:
+    if not requested_location:
+        return True
+
+    requested = _normalize_catalog_text(requested_location)
+
+    if not requested:
+        return True
+
+    name = _normalize_catalog_text(branch.get("name"))
+    city = _normalize_catalog_text(branch.get("city"))
+    area = _normalize_catalog_text(branch.get("area"))
+    address = _normalize_catalog_text(branch.get("address"))
+
+    if requested in {name, city, area}:
+        return True
+
+    if name and (requested in name or name in requested):
+        return True
+
+    if area and (requested in area or area in requested):
+        return True
+
+    if address and requested in address:
+        return True
+
+    return False
+
+
+def _split_inventory_for_location(
+    rows: list[dict[str, Any]],
+    requested_location: str | None,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    if not requested_location:
+        return list(rows), []
+
+    matching: list[dict[str, Any]] = []
+    other: list[dict[str, Any]] = []
+
+    for row in rows:
+        branch = row.get("branch") or {}
+
+        if _location_matches_branch(branch, requested_location):
+            matching.append(row)
+        else:
+            other.append(row)
+
+    return matching, other
+
+
+def _total_available(rows: list[dict[str, Any]]) -> int:
+    return sum(
+        _inventory_available_quantity(row)
+        for row in rows
+    )
+
+
+def _positive_inventory_rows(
+    rows: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    return [
+        row
+        for row in rows
+        if _inventory_available_quantity(row) > 0
+    ]
+
+
+def _available_size_names(
+    results: list[dict[str, Any]],
+) -> list[str]:
+    values: set[str] = set()
+
+    for result in results:
+        inventory = result.get("inventory") or []
+
+        if not any(
+            _inventory_available_quantity(row) > 0
+            for row in inventory
+        ):
+            continue
+
+        size = (
+            (result.get("variant") or {}).get("size")
+            or {}
+        )
+        name = str(size.get("name") or "").strip()
+
+        if name:
+            values.add(name)
+
+    return sorted(values)
+
+
+def _available_color_names(
+    results: list[dict[str, Any]],
+) -> list[str]:
+    values: set[str] = set()
+
+    for result in results:
+        inventory = result.get("inventory") or []
+
+        if not any(
+            _inventory_available_quantity(row) > 0
+            for row in inventory
+        ):
+            continue
+
+        color = (
+            (result.get("variant") or {}).get("color")
+            or {}
+        )
+        name = str(color.get("name") or "").strip()
+
+        if name:
+            values.add(name)
+
+    return sorted(values)
+
+
+def _format_branch_alternatives(
+    rows: list[dict[str, Any]],
+) -> str:
+    parts: list[str] = []
+
+    for row in sorted(
+        _positive_inventory_rows(rows),
+        key=lambda item: -_inventory_available_quantity(item),
+    )[:5]:
+        branch = row.get("branch") or {}
+        name = str(branch.get("name") or "Branch").strip()
+        city = str(branch.get("city") or "").strip()
+        quantity = _inventory_available_quantity(row)
+        label = f"{name}, {city}" if city else name
+        parts.append(
+            f"{label}: {quantity} unit{'s' if quantity != 1 else ''}"
+        )
+
+    return "; ".join(parts)
+
+
+def _build_catalog_query(
+    parsed: ParsedCustomerMessage,
+) -> str:
+    """Build a clean search query while preserving free-text semantics.
+
+    Structured bilingual requests should not send filler/action words such
+    as "mujhe", "chahiye", "available hai" into hybrid retrieval. When the
+    parser has useful hard attributes, use those attributes as the retrieval
+    query and keep the same attributes as authoritative filters.
+
+    Free-text semantic requests with no structured attributes still use the
+    original customer message unchanged.
+    """
+
+    if parsed.entities.product_name:
+        return parsed.entities.product_name.strip()
+
+    parts: list[str] = []
+
+    for value in (
+        parsed.entities.color,
+        parsed.entities.material,
+        parsed.entities.category,
+    ):
+        if value:
+            text = str(value).strip()
+            if text and text.casefold() not in {
+                item.casefold()
+                for item in parts
+            }:
+                parts.append(text)
+
+    if parts:
+        return " ".join(parts)
+
+    return parsed.raw_message.strip()
+
+
+def _combined_cart_wishlist_request(message: str) -> bool:
+    text = _normalize_catalog_text(message)
+    return "cart" in text and "wishlist" in text
+
+
+def _resolve_named_action_variant(
+    *,
+    parsed: ParsedCustomerMessage,
+    state: dict,
+    customer_id: str,
+) -> tuple[str | None, list[dict[str, Any]]]:
+    """Resolve Cart/Wishlist actions without overriding explicit context."""
+    existing_reference = resolve_variant_reference(
+        parsed,
+        state,
+    )
+
+    if existing_reference:
+        return existing_reference, []
+
+    # An explicit but out-of-range ordinal must stay unresolved.
+    # Never turn "the third one" into a semantic product search.
+    if parsed.entities.ordinal_reference is not None:
+        return None, []
+
+    product_name = parsed.entities.product_name
+
+    if product_name:
+        results = product_agent.search(
+            query=product_name,
+            match_count=50,
+            color=parsed.entities.color,
+            size=parsed.entities.size,
+            material=parsed.entities.material,
+            category=parsed.entities.category,
+            min_price=None,
+            max_price=None,
+            track_demand=False,
+            customer_id=customer_id,
+        )
+
+        results = _filter_named_product_results(
+            results,
+            product_name,
+        )
+
+        variant_ids = _unique_variant_ids_from_results(results)
+
+        if len(variant_ids) == 1:
+            return variant_ids[0], results
+
+        if variant_ids:
+            last_variant = state.get("last_variant_id")
+
+            if last_variant and str(last_variant) in variant_ids:
+                return str(last_variant), results
+
+        return None, results
+
+    return None, []
+
+
 def build_stock_status_block(
     variant_id: str,
     inventory: list[dict],
@@ -854,17 +1180,10 @@ def build_stock_status_block(
 
         if (
             branch_name
-            and
-            str(
-                actual_branch_name
-                or ""
+            and not _location_matches_branch(
+                branch,
+                branch_name,
             )
-            .strip()
-            .lower()
-            !=
-            branch_name
-            .strip()
-            .lower()
         ):
             continue
 
@@ -1497,7 +1816,7 @@ class OrchestratorAgent:
 
                 arguments = {
                     "customer_id": customer_id,
-                    "query": parsed.raw_message,
+                    "query": _build_catalog_query(parsed),
                     "category": parsed.entities.category,
                     "color": parsed.entities.color,
                     "size": parsed.entities.size,
@@ -1564,7 +1883,9 @@ class OrchestratorAgent:
 
                 arguments = {
                     "query":
-                        parsed.raw_message,
+                        _build_catalog_query(
+                            parsed
+                        ),
                     "match_count":
                         10,
                     "color":
@@ -1664,6 +1985,20 @@ class OrchestratorAgent:
                 parsed.intent
                 == "stock_check"
             ):
+                requested_product_name = (
+                    parsed.entities.product_name
+                )
+                requested_branch = (
+                    parsed.entities.branch_name
+                )
+                requested_quantity = (
+                    _extract_stock_requested_quantity(
+                        message,
+                        parsed,
+                    )
+                )
+
+                # Context/ordinal references remain supported.
                 variant_ids = (
                     resolve_variant_references(
                         parsed,
@@ -1671,21 +2006,209 @@ class OrchestratorAgent:
                     )
                 )
 
-                if (
-                    not variant_ids
-                    and (
-                        parsed.entities.category
-                        or parsed.entities.product_name
+                exact_results: list[dict[str, Any]] = []
+                named_stock_handled = False
+
+                # A newly named product is a hard constraint and must be
+                # resolved before falling back to old conversation context.
+                if requested_product_name:
+                    search_plan = plan_intent(
+                        "product_search"
                     )
+                    assert search_plan is not None
+
+                    search_arguments = {
+                        "query": requested_product_name,
+                        "match_count": 50,
+                        "color": parsed.entities.color,
+                        "size": parsed.entities.size,
+                        "material": parsed.entities.material,
+                        "category": parsed.entities.category,
+                        "min_price": None,
+                        "max_price": None,
+                        "track_demand": False,
+                        "customer_id": customer_id,
+                    }
+
+                    exact_results = self._run_traced_tool(
+                        run_id=run_id,
+                        plan=search_plan,
+                        arguments=search_arguments,
+                        call=lambda: product_agent.search(
+                            **search_arguments
+                        ),
+                    )
+
+                    exact_results = _filter_named_product_results(
+                        exact_results,
+                        requested_product_name,
+                    )
+                    variant_ids = _unique_variant_ids_from_results(
+                        exact_results
+                    )
+
+                    # If the exact size/color combination does not exist,
+                    # search the SAME product without those variant filters
+                    # so we can truthfully explain the alternatives.
+                    if not variant_ids:
+                        relaxed_arguments = {
+                            "query": requested_product_name,
+                            "match_count": 50,
+                            "color": None,
+                            "size": None,
+                            "material": parsed.entities.material,
+                            "category": parsed.entities.category,
+                            "min_price": None,
+                            "max_price": None,
+                            "track_demand": False,
+                            "customer_id": customer_id,
+                        }
+
+                        relaxed_results = self._run_traced_tool(
+                            run_id=run_id,
+                            plan=search_plan,
+                            arguments=relaxed_arguments,
+                            call=lambda: product_agent.search(
+                                **relaxed_arguments
+                            ),
+                        )
+                        relaxed_results = _filter_named_product_results(
+                            relaxed_results,
+                            requested_product_name,
+                        )
+
+                        if not relaxed_results:
+                            record_demand_signal(
+                                signal_type="no_catalog_match",
+                                customer_id=customer_id,
+                                requested_size=parsed.entities.size,
+                                requested_color=parsed.entities.color,
+                                metadata={
+                                    "query": _build_catalog_query(parsed),
+                                    "requested_product_name": requested_product_name,
+                                    "requested_branch": requested_branch,
+                                    "source": "stock_check",
+                                },
+                            )
+
+                            content = (
+                                f'I couldn\'t find "{requested_product_name}" '
+                                "in our catalog."
+                            )
+                            blocks = []
+
+                            chat_service.merge_conversation_state(
+                                customer_id,
+                                conversation_id,
+                                {
+                                    "last_intent": parsed.intent,
+                                    "last_variant_id": None,
+                                    "last_search_variant_ids": [],
+                                    "language": parsed.language,
+                                },
+                            )
+                        else:
+                            product_name = (
+                                _result_product_name(relaxed_results[0])
+                                or requested_product_name
+                            )
+                            sizes = _available_size_names(relaxed_results)
+                            colors = _available_color_names(relaxed_results)
+
+                            requested_parts: list[str] = []
+                            if parsed.entities.size:
+                                requested_parts.append(
+                                    f"size {parsed.entities.size}"
+                                )
+                            if parsed.entities.color:
+                                requested_parts.append(
+                                    f"color {parsed.entities.color}"
+                                )
+
+                            requested_label = (
+                                " in " + " / ".join(requested_parts)
+                                if requested_parts
+                                else ""
+                            )
+
+                            content = (
+                                f"{product_name}{requested_label} is not "
+                                "currently available."
+                            )
+
+                            if parsed.entities.size and sizes:
+                                content += (
+                                    " Available sizes: "
+                                    + ", ".join(sizes)
+                                    + "."
+                                )
+
+                            if parsed.entities.color and colors:
+                                content += (
+                                    " Available colors: "
+                                    + ", ".join(colors)
+                                    + "."
+                                )
+
+                            candidate = relaxed_results[0]
+                            record_demand_signal(
+                                signal_type="requested_variant_unavailable",
+                                customer_id=customer_id,
+                                product_id=candidate.get("product_id"),
+                                variant_id=candidate.get("variant_id"),
+                                requested_size=parsed.entities.size,
+                                requested_color=parsed.entities.color,
+                                metadata={
+                                    "query": parsed.raw_message,
+                                    "requested_product_name": requested_product_name,
+                                    "requested_branch": requested_branch,
+                                    "source": "stock_check",
+                                },
+                            )
+
+                            alternative_block = build_product_carousel(
+                                relaxed_results[:10]
+                            )
+                            blocks = (
+                                [alternative_block]
+                                if alternative_block.products
+                                else []
+                            )
+
+                            alternative_ids = _unique_variant_ids_from_results(
+                                relaxed_results
+                            )
+                            chat_service.merge_conversation_state(
+                                customer_id,
+                                conversation_id,
+                                {
+                                    "last_intent": parsed.intent,
+                                    "last_variant_id": (
+                                        alternative_ids[0]
+                                        if alternative_ids
+                                        else None
+                                    ),
+                                    "last_search_variant_ids": alternative_ids,
+                                    "language": parsed.language,
+                                },
+                            )
+
+                        # This named-product request is fully handled.
+                        named_stock_handled = True
+                        variant_ids = []
+
+                # Category-only stock questions can still search normally.
+                elif (
+                    not variant_ids
+                    and parsed.entities.category
                 ):
                     search_plan = plan_intent(
                         "product_search"
                     )
-
                     assert search_plan is not None
 
                     search_arguments = {
-                        "query": parsed.raw_message,
+                        "query": _build_catalog_query(parsed),
                         "match_count": 10,
                         "color": parsed.entities.color,
                         "size": parsed.entities.size,
@@ -1696,7 +2219,6 @@ class OrchestratorAgent:
                         "track_demand": True,
                         "customer_id": customer_id,
                     }
-
                     search_results = self._run_traced_tool(
                         run_id=run_id,
                         plan=search_plan,
@@ -1705,331 +2227,347 @@ class OrchestratorAgent:
                             **search_arguments
                         ),
                     )
-
-                    search_block = build_product_carousel(
+                    variant_ids = _unique_variant_ids_from_results(
                         search_results
                     )
 
-                    variant_ids = [
-                        product.variant_id
-                        for product in search_block.products
+                    # A structured stock question already identifies what
+                    # the customer wants. If no exact variant matches, this
+                    # is an unavailable request, not an ambiguous reference.
+                    # Never answer "Which item do you mean?" for:
+                    #   "Do you have a blue Khaddar shirt in size M?"
+                    if not variant_ids:
+                        relaxed_results: list[dict[str, Any]] = []
+
+                        if parsed.entities.size:
+                            relaxed_arguments = {
+                                **search_arguments,
+                                "size": None,
+                                "track_demand": False,
+                            }
+
+                            relaxed_results = self._run_traced_tool(
+                                run_id=run_id,
+                                plan=search_plan,
+                                arguments=relaxed_arguments,
+                                call=lambda: product_agent.search(
+                                    **relaxed_arguments
+                                ),
+                            )
+
+                        descriptor_parts = [
+                            str(value)
+                            for value in (
+                                parsed.entities.color,
+                                parsed.entities.material,
+                                parsed.entities.category,
+                            )
+                            if value
+                        ]
+
+                        descriptor = (
+                            " ".join(descriptor_parts)
+                            or "matching product"
+                        )
+
+                        if parsed.entities.size:
+                            descriptor += f" in size {parsed.entities.size}"
+
+                        content = (
+                            f"I couldn't find a {descriptor} that matches "
+                            "your request."
+                        )
+
+                        sizes = _available_size_names(relaxed_results)
+
+                        if parsed.entities.size and sizes:
+                            content += (
+                                " Available sizes for otherwise matching "
+                                "items: "
+                                + ", ".join(sizes)
+                                + "."
+                            )
+
+                        record_demand_signal(
+                            signal_type="requested_variant_unavailable",
+                            customer_id=customer_id,
+                            requested_size=parsed.entities.size,
+                            requested_color=parsed.entities.color,
+                            metadata={
+                                "query": parsed.raw_message,
+                                "requested_branch": requested_branch,
+                                "requested_material": parsed.entities.material,
+                                "requested_category": parsed.entities.category,
+                                "max_price": parsed.entities.max_price,
+                                "source": "stock_check",
+                            },
+                        )
+
+                        alternative_block = build_product_carousel(
+                            relaxed_results[:10]
+                        )
+                        blocks = (
+                            [alternative_block]
+                            if alternative_block.products
+                            else []
+                        )
+
+                        chat_service.merge_conversation_state(
+                            customer_id,
+                            conversation_id,
+                            {
+                                "last_intent": parsed.intent,
+                                "last_variant_id": None,
+                                "last_search_variant_ids": (
+                                    _unique_variant_ids_from_results(
+                                        relaxed_results
+                                    )
+                                ),
+                                "language": parsed.language,
+                            },
+                        )
+
+                        named_stock_handled = True
+
+                # If a named/structured request was already handled above,
+                # content is set.
+                if named_stock_handled:
+                    pass
+
+                elif not variant_ids:
+                    return self._finish_clarification(
+                        customer_id=customer_id,
+                        conversation_id=conversation_id,
+                        run_id=run_id,
+                        parsed=parsed,
+                        content=(
+                            customer_interaction_agent
+                            .compose_stock_reference_clarification(
+                                parsed.language
+                            )
+                        ),
+                    )
+
+                else:
+                    plan = plan_intent(parsed.intent)
+                    assert plan is not None
+
+                    jobs: list[
+                        tuple[
+                            PlannedTask,
+                            dict,
+                            Callable[[], Any],
+                        ]
+                    ] = []
+
+                    for variant_id in variant_ids:
+                        arguments = {
+                            "variant_id": variant_id,
+                        }
+                        jobs.append(
+                            (
+                                plan,
+                                arguments,
+                                lambda current_variant_id=variant_id:
+                                    inventory_agent
+                                    .get_stock_snapshot_with_branches(
+                                        current_variant_id
+                                    ),
+                            )
+                        )
+
+                    inventory_results = self._run_parallel_traced_tools(
+                        run_id=run_id,
+                        jobs=jobs,
+                    )
+
+                    requested_rows_all: list[dict[str, Any]] = []
+                    alternative_rows_all: list[dict[str, Any]] = []
+                    display_rows_by_variant: list[list[dict[str, Any]]] = []
+
+                    for inventory in inventory_results:
+                        inventory = inventory or []
+
+                        if requested_branch:
+                            requested_rows, other_rows = (
+                                _split_inventory_for_location(
+                                    inventory,
+                                    requested_branch,
+                                )
+                            )
+                            requested_rows_all.extend(requested_rows)
+                            alternative_rows_all.extend(
+                                _positive_inventory_rows(other_rows)
+                            )
+
+                            if _total_available(requested_rows) > 0:
+                                display_rows_by_variant.append(
+                                    requested_rows
+                                )
+                            else:
+                                display_rows_by_variant.append(
+                                    requested_rows
+                                    + _positive_inventory_rows(other_rows)
+                                )
+                        else:
+                            requested_rows_all.extend(inventory)
+                            display_rows_by_variant.append(inventory)
+
+                    available_quantity = _total_available(
+                        requested_rows_all
+                    )
+
+                    if requested_quantity is not None and (
+                        requested_quantity > available_quantity
+                    ):
+                        signal_type = "insufficient_stock"
+                    elif available_quantity <= 0:
+                        signal_type = (
+                            "requested_variant_unavailable"
+                            if requested_product_name
+                            else "insufficient_stock"
+                        )
+                    else:
+                        signal_type = None
+
+                    if signal_type:
+                        first_variant_id = variant_ids[0]
+                        first_branch_id = None
+
+                        if requested_rows_all:
+                            value = requested_rows_all[0].get("branch_id")
+                            first_branch_id = str(value) if value else None
+
+                        metadata = {
+                            "requested_branch": requested_branch,
+                            "checked_branch_count": len(requested_rows_all),
+                            "available_quantity": available_quantity,
+                            "requested_size": parsed.entities.size,
+                            "requested_color": parsed.entities.color,
+                            "available_elsewhere": bool(alternative_rows_all),
+                            "source": "stock_check",
+                        }
+
+                        if requested_quantity is not None:
+                            metadata["requested_quantity"] = requested_quantity
+                            metadata["shortfall_quantity"] = max(
+                                0,
+                                requested_quantity - available_quantity,
+                            )
+
+                        record_demand_signal(
+                            signal_type=signal_type,
+                            customer_id=customer_id,
+                            variant_id=first_variant_id,
+                            branch_id=first_branch_id,
+                            requested_size=parsed.entities.size,
+                            requested_color=parsed.entities.color,
+                            metadata=metadata,
+                        )
+
+                    stock_blocks = [
+                        build_stock_status_block(
+                            variant_id,
+                            rows,
+                            branch_name=None,
+                        )
+                        for variant_id, rows in zip(
+                            variant_ids,
+                            display_rows_by_variant,
+                            strict=True,
+                        )
                     ]
 
-                    if not variant_ids:
-                        return self._finish_clarification(
-                            customer_id=customer_id,
-                            conversation_id=conversation_id,
-                            run_id=run_id,
-                            parsed=parsed,
-                            content=(
-                                customer_interaction_agent
-                                .compose_search_response(
-                                    parsed.language,
-                                    0,
-                                )
-                            ),
+                    product_label = (
+                        _result_product_name(exact_results[0])
+                        if exact_results
+                        else (
+                            requested_product_name
+                            or "The requested item"
                         )
+                    )
+
+                    if requested_branch:
+                        if available_quantity > 0:
+                            if (
+                                requested_quantity is not None
+                                and requested_quantity > available_quantity
+                            ):
+                                content = (
+                                    f"{product_label} is available at "
+                                    f"{requested_branch}, but only "
+                                    f"{available_quantity} unit"
+                                    f"{'s are' if available_quantity != 1 else ' is'} "
+                                    f"currently available. You requested "
+                                    f"{requested_quantity}."
+                                )
+                            else:
+                                content = (
+                                    f"Yes. {product_label} is available at "
+                                    f"{requested_branch}. Available quantity: "
+                                    f"{available_quantity}."
+                                )
+                        else:
+                            content = (
+                                f"{product_label} is not currently available "
+                                f"at {requested_branch}."
+                            )
+                            alternatives = _format_branch_alternatives(
+                                alternative_rows_all
+                            )
+                            if alternatives:
+                                content += (
+                                    " It is available at other branches: "
+                                    f"{alternatives}."
+                                )
+                            else:
+                                content += (
+                                    " It is also not currently available at "
+                                    "any other active branch."
+                                )
+                    else:
+                        if available_quantity <= 0:
+                            content = (
+                                f"{product_label} is currently out of stock "
+                                "at all active branches."
+                            )
+                        elif (
+                            requested_quantity is not None
+                            and requested_quantity > available_quantity
+                        ):
+                            content = (
+                                f"Only {available_quantity} unit"
+                                f"{'s are' if available_quantity != 1 else ' is'} "
+                                "currently available across the matching "
+                                f"branches. You requested {requested_quantity}."
+                            )
+                        elif len(stock_blocks) == 1:
+                            content = (
+                                customer_interaction_agent
+                                .compose_stock_response(
+                                    parsed.language,
+                                    stock_blocks[0],
+                                    requested_branch=None,
+                                )
+                            )
+                        else:
+                            content = (
+                                f"I checked {len(stock_blocks)} matching variants "
+                                "in parallel. The stock cards below show "
+                                "verified branch-level availability."
+                            )
 
                     chat_service.merge_conversation_state(
                         customer_id,
                         conversation_id,
                         {
-                            "last_search_variant_ids": variant_ids,
-                            "last_variant_id": variant_ids[0],
                             "last_intent": parsed.intent,
+                            "last_variant_id": variant_ids[-1],
+                            "last_search_variant_ids": variant_ids,
                             "language": parsed.language,
                         },
                     )
-
-                if not variant_ids:
-                    return (
-                        self
-                        ._finish_clarification(
-                            customer_id=(
-                                customer_id
-                            ),
-                            conversation_id=(
-                                conversation_id
-                            ),
-                            run_id=(
-                                run_id
-                            ),
-                            parsed=parsed,
-                            content=(
-                                customer_interaction_agent
-                                .compose_stock_reference_clarification(
-                                    parsed.language
-                                )
-                            ),
-                        )
-                    )
-
-                plan = (
-                    plan_intent(
-                        parsed.intent
-                    )
-                )
-
-                assert (
-                    plan is not None
-                )
-
-                jobs: list[
-                    tuple[
-                        PlannedTask,
-                        dict,
-                        Callable[
-                            [],
-                            Any,
-                        ],
-                    ]
-                ] = []
-
-                for variant_id in variant_ids:
-                    arguments = {
-                        "variant_id":
-                            variant_id,
-                    }
-
-                    jobs.append(
-                        (
-                            plan,
-                            arguments,
-                            (
-                                lambda current_variant_id=variant_id:
-                                    inventory_agent
-                                    .get_stock_snapshot_with_branches(
-                                        current_variant_id
-                                    )
-                            ),
-                        )
-                    )
-
-                inventory_results = (
-                    self
-                    ._run_parallel_traced_tools(
-                        run_id=(
-                            run_id
-                        ),
-                        jobs=jobs,
-                    )
-                )
-
-                requested_branch = (
-                    parsed
-                    .entities
-                    .branch_name
-                )
-
-                requested_quantity = (
-                    _extract_stock_requested_quantity(
-                        message,
-                        parsed,
-                    )
-                )
-
-                for variant_id, inventory in zip(
-                    variant_ids,
-                    inventory_results,
-                    strict=True,
-                ):
-                    if not inventory:
-                        continue
-
-                    relevant_rows = []
-
-                    for row in inventory:
-                        branch = (
-                            row.get("branch")
-                            or {}
-                        )
-
-                        if not branch:
-                            continue
-
-                        if (
-                            requested_branch
-                            and
-                            str(
-                                branch.get("name")
-                                or ""
-                            )
-                            .strip()
-                            .lower()
-                            !=
-                            requested_branch
-                            .strip()
-                            .lower()
-                        ):
-                            continue
-
-                        relevant_rows.append(
-                            row
-                        )
-
-                    if not relevant_rows:
-                        continue
-
-                    available_quantity = sum(
-                        max(
-                            0,
-                            int(
-                                row.get(
-                                    "available_quantity"
-                                )
-                                or 0
-                            ),
-                        )
-                        for row
-                        in relevant_rows
-                    )
-
-                    stock_is_insufficient = (
-                        available_quantity <= 0
-                        or (
-                            requested_quantity
-                            is not None
-                            and
-                            requested_quantity
-                            > available_quantity
-                        )
-                    )
-
-                    if stock_is_insufficient:
-                        metadata = {
-                            "requested_branch":
-                                requested_branch,
-
-                            "checked_branch_count":
-                                len(
-                                    relevant_rows
-                                ),
-
-                            "available_quantity":
-                                available_quantity,
-
-                            "source":
-                                "stock_check",
-                        }
-
-                        if (
-                            requested_quantity
-                            is not None
-                        ):
-                            metadata[
-                                "requested_quantity"
-                            ] = (
-                                requested_quantity
-                            )
-
-                            metadata[
-                                "shortfall_quantity"
-                            ] = max(
-                                0,
-                                requested_quantity
-                                -
-                                available_quantity,
-                            )
-
-                        record_demand_signal(
-                            signal_type=(
-                                "insufficient_stock"
-                            ),
-                            customer_id=(
-                                customer_id
-                            ),
-                            variant_id=(
-                                variant_id
-                            ),
-                            branch_id=(
-                                str(
-                                    relevant_rows[
-                                        0
-                                    ].get(
-                                        "branch_id"
-                                    )
-                                )
-                                if (
-                                    requested_branch
-                                    and
-                                    relevant_rows[
-                                        0
-                                    ].get(
-                                        "branch_id"
-                                    )
-                                    is not None
-                                )
-                                else None
-                            ),
-                            metadata=metadata,
-                        )
-
-                stock_blocks = [
-                    build_stock_status_block(
-                        variant_id,
-                        inventory,
-                        branch_name=(
-                            parsed
-                            .entities
-                            .branch_name
-                        ),
-                    )
-                    for (
-                        variant_id,
-                        inventory,
-                    ) in zip(
-                        variant_ids,
-                        inventory_results,
-                        strict=True,
-                    )
-                ]
-
-                (
-                    chat_service
-                    .merge_conversation_state(
-                        customer_id,
-                        conversation_id,
-                        {
-                            "last_intent":
-                                parsed.intent,
-                            "last_variant_id":
-                                variant_ids[-1],
-                            "language":
-                                parsed.language,
-                        },
-                    )
-                )
-
-                if (
-                    len(stock_blocks)
-                    == 1
-                ):
-                    content = (
-                        customer_interaction_agent
-                        .compose_stock_response(
-                            parsed.language,
-                            stock_blocks[0],
-                            requested_branch=(
-                                parsed
-                                .entities
-                                .branch_name
-                            ),
-                        )
-                    )
-                else:
-                    content = (
-                        customer_interaction_agent
-                        .compose_multi_stock_response(
-                            parsed.language,
-                            len(
-                                stock_blocks
-                            ),
-                        )
-                    )
-
-                blocks = list(
-                    stock_blocks
-                )
+                    blocks = list(stock_blocks)
 
             elif parsed.intent == "reservation_create":
                 variant_id = resolve_variant_reference(
@@ -2246,224 +2784,264 @@ class OrchestratorAgent:
                 parsed.intent
                 == "add_to_cart"
             ):
-                variant_id = (
-                    resolve_variant_reference(
-                        parsed,
-                        state,
+                variant_id, candidates = (
+                    _resolve_named_action_variant(
+                        parsed=parsed,
+                        state=state,
+                        customer_id=customer_id,
                     )
                 )
 
                 if not variant_id:
-                    return (
-                        self
-                        ._finish_clarification(
-                            customer_id=(
-                                customer_id
-                            ),
-                            conversation_id=(
-                                conversation_id
-                            ),
-                            run_id=(
-                                run_id
-                            ),
-                            parsed=parsed,
-                            content=(
-                                customer_interaction_agent
-                                .compose_item_reference_clarification(
-                                    parsed.language
-                                )
-                            ),
+                    if parsed.entities.product_name and not candidates:
+                        content = (
+                            f'I couldn\'t find "{parsed.entities.product_name}" '
+                            "in our catalog."
                         )
-                    )
+                        blocks = []
+                        return self._finish_clarification(
+                            customer_id=customer_id,
+                            conversation_id=conversation_id,
+                            run_id=run_id,
+                            parsed=parsed,
+                            content=content,
+                        )
 
-                quantity = (
-                    parsed
-                    .entities
-                    .quantity
-                    or 1
-                )
+                    if candidates:
+                        candidate_block = build_product_carousel(
+                            candidates[:10]
+                        )
+                        sizes = _available_size_names(candidates)
+                        colors = _available_color_names(candidates)
+                        details: list[str] = []
+                        if sizes:
+                            details.append("sizes " + ", ".join(sizes))
+                        if colors:
+                            details.append("colors " + ", ".join(colors))
+                        detail_text = (
+                            f" ({'; '.join(details)})"
+                            if details
+                            else ""
+                        )
+                        content = (
+                            f"I found multiple variants of "
+                            f"{parsed.entities.product_name or 'that product'}"
+                            f"{detail_text}. Please specify the size/color "
+                            "or select one of the product cards first."
+                        )
+                        return self._finish_clarification(
+                            customer_id=customer_id,
+                            conversation_id=conversation_id,
+                            run_id=run_id,
+                            parsed=parsed,
+                            content=content,
+                        )
 
-                plan = (
-                    plan_intent(
-                        parsed.intent
-                    )
-                )
-
-                assert (
-                    plan is not None
-                )
-
-                arguments = {
-                    "variant_id":
-                        variant_id,
-                    "quantity":
-                        quantity,
-                }
-
-                cart = (
-                    self
-                    ._run_traced_tool(
-                        run_id=(
-                            run_id
-                        ),
-                        plan=plan,
-                        arguments=(
-                            arguments
-                        ),
-                        call=lambda: (
-                            add_cart_item(
-                                customer_id=(
-                                    customer_id
-                                ),
-                                variant_id=(
-                                    variant_id
-                                ),
-                                quantity=(
-                                    quantity
-                                ),
+                    return self._finish_clarification(
+                        customer_id=customer_id,
+                        conversation_id=conversation_id,
+                        run_id=run_id,
+                        parsed=parsed,
+                        content=(
+                            customer_interaction_agent
+                            .compose_item_reference_clarification(
+                                parsed.language
                             )
                         ),
                     )
-                )
 
-                block = (
-                    CartSummaryBlock(
-                        data=cart
+                quantity = parsed.entities.quantity or 1
+                cart_plan = plan_intent("add_to_cart")
+                assert cart_plan is not None
+
+                cart_arguments = {
+                    "variant_id": variant_id,
+                    "quantity": quantity,
+                }
+                cart = self._run_traced_tool(
+                    run_id=run_id,
+                    plan=cart_plan,
+                    arguments=cart_arguments,
+                    call=lambda: add_cart_item(
+                        customer_id=customer_id,
+                        variant_id=variant_id,
+                        quantity=quantity,
+                    ),
+                )
+                cart_block = CartSummaryBlock(data=cart)
+
+                if _combined_cart_wishlist_request(parsed.raw_message):
+                    wishlist_plan = plan_intent("add_to_wishlist")
+                    assert wishlist_plan is not None
+                    wishlist_arguments = {
+                        "variant_id": variant_id,
+                    }
+                    wishlist = self._run_traced_tool(
+                        run_id=run_id,
+                        plan=wishlist_plan,
+                        arguments=wishlist_arguments,
+                        call=lambda: add_wishlist_item(
+                            customer_id=customer_id,
+                            variant_id=variant_id,
+                        ),
                     )
-                )
-
-                (
-                    chat_service
-                    .merge_conversation_state(
-                        customer_id,
-                        conversation_id,
-                        {
-                            "last_intent":
-                                parsed.intent,
-                            "last_variant_id":
-                                variant_id,
-                            "language":
-                                parsed.language,
-                        },
+                    blocks = [
+                        cart_block,
+                        WishlistBlock(data=wishlist),
+                    ]
+                    content = (
+                        f"Added {quantity} item"
+                        f"{'s' if quantity != 1 else ''} to your cart "
+                        "and added the item to your wishlist."
                     )
-                )
-
-                content = (
-                    customer_interaction_agent
-                    .compose_cart_added_response(
-                        parsed.language,
-                        quantity,
+                else:
+                    blocks = [cart_block]
+                    content = (
+                        customer_interaction_agent
+                        .compose_cart_added_response(
+                            parsed.language,
+                            quantity,
+                        )
                     )
-                )
 
-                blocks = [
-                    block
-                ]
+                chat_service.merge_conversation_state(
+                    customer_id,
+                    conversation_id,
+                    {
+                        "last_intent": parsed.intent,
+                        "last_variant_id": variant_id,
+                        "language": parsed.language,
+                    },
+                )
 
             elif (
                 parsed.intent
                 == "add_to_wishlist"
             ):
-                variant_id = (
-                    resolve_variant_reference(
-                        parsed,
-                        state,
+                variant_id, candidates = (
+                    _resolve_named_action_variant(
+                        parsed=parsed,
+                        state=state,
+                        customer_id=customer_id,
                     )
                 )
 
                 if not variant_id:
-                    return (
-                        self
-                        ._finish_clarification(
-                            customer_id=(
-                                customer_id
-                            ),
-                            conversation_id=(
-                                conversation_id
-                            ),
-                            run_id=(
-                                run_id
-                            ),
+                    if parsed.entities.product_name and not candidates:
+                        return self._finish_clarification(
+                            customer_id=customer_id,
+                            conversation_id=conversation_id,
+                            run_id=run_id,
                             parsed=parsed,
                             content=(
-                                customer_interaction_agent
-                                .compose_item_reference_clarification(
-                                    parsed.language
-                                )
+                                f'I couldn\'t find "{parsed.entities.product_name}" '
+                                "in our catalog."
                             ),
                         )
-                    )
 
-                plan = (
-                    plan_intent(
-                        parsed.intent
-                    )
-                )
+                    if candidates:
+                        candidate_block = build_product_carousel(
+                            candidates[:10]
+                        )
+                        sizes = _available_size_names(candidates)
+                        colors = _available_color_names(candidates)
+                        details: list[str] = []
+                        if sizes:
+                            details.append("sizes " + ", ".join(sizes))
+                        if colors:
+                            details.append("colors " + ", ".join(colors))
+                        detail_text = (
+                            f" ({'; '.join(details)})"
+                            if details
+                            else ""
+                        )
+                        return self._finish_clarification(
+                            customer_id=customer_id,
+                            conversation_id=conversation_id,
+                            run_id=run_id,
+                            parsed=parsed,
+                            content=(
+                                f"I found multiple variants of "
+                                f"{parsed.entities.product_name or 'that product'}"
+                                f"{detail_text}. Please specify the size/color "
+                                "or select one of the product cards first."
+                            ),
+                        )
 
-                assert (
-                    plan is not None
-                )
-
-                arguments = {
-                    "variant_id":
-                        variant_id,
-                }
-
-                wishlist = (
-                    self
-                    ._run_traced_tool(
-                        run_id=(
-                            run_id
-                        ),
-                        plan=plan,
-                        arguments=(
-                            arguments
-                        ),
-                        call=lambda: (
-                            add_wishlist_item(
-                                customer_id=(
-                                    customer_id
-                                ),
-                                variant_id=(
-                                    variant_id
-                                ),
+                    return self._finish_clarification(
+                        customer_id=customer_id,
+                        conversation_id=conversation_id,
+                        run_id=run_id,
+                        parsed=parsed,
+                        content=(
+                            customer_interaction_agent
+                            .compose_item_reference_clarification(
+                                parsed.language
                             )
                         ),
                     )
-                )
 
-                block = (
-                    WishlistBlock(
-                        data=wishlist
+                wishlist_plan = plan_intent("add_to_wishlist")
+                assert wishlist_plan is not None
+                wishlist_arguments = {
+                    "variant_id": variant_id,
+                }
+                wishlist = self._run_traced_tool(
+                    run_id=run_id,
+                    plan=wishlist_plan,
+                    arguments=wishlist_arguments,
+                    call=lambda: add_wishlist_item(
+                        customer_id=customer_id,
+                        variant_id=variant_id,
+                    ),
+                )
+                wishlist_block = WishlistBlock(data=wishlist)
+
+                if _combined_cart_wishlist_request(parsed.raw_message):
+                    quantity = parsed.entities.quantity or 1
+                    cart_plan = plan_intent("add_to_cart")
+                    assert cart_plan is not None
+                    cart_arguments = {
+                        "variant_id": variant_id,
+                        "quantity": quantity,
+                    }
+                    cart = self._run_traced_tool(
+                        run_id=run_id,
+                        plan=cart_plan,
+                        arguments=cart_arguments,
+                        call=lambda: add_cart_item(
+                            customer_id=customer_id,
+                            variant_id=variant_id,
+                            quantity=quantity,
+                        ),
                     )
-                )
-
-                (
-                    chat_service
-                    .merge_conversation_state(
-                        customer_id,
-                        conversation_id,
-                        {
-                            "last_intent":
-                                parsed.intent,
-                            "last_variant_id":
-                                variant_id,
-                            "language":
-                                parsed.language,
-                        },
+                    blocks = [
+                        CartSummaryBlock(data=cart),
+                        wishlist_block,
+                    ]
+                    content = (
+                        f"Added {quantity} item"
+                        f"{'s' if quantity != 1 else ''} to your cart "
+                        "and added the item to your wishlist."
                     )
-                )
-
-                content = (
-                    customer_interaction_agent
-                    .compose_wishlist_added_response(
-                        parsed.language
+                else:
+                    blocks = [wishlist_block]
+                    content = (
+                        customer_interaction_agent
+                        .compose_wishlist_added_response(
+                            parsed.language
+                        )
                     )
-                )
 
-                blocks = [
-                    block
-                ]
+                chat_service.merge_conversation_state(
+                    customer_id,
+                    conversation_id,
+                    {
+                        "last_intent": parsed.intent,
+                        "last_variant_id": variant_id,
+                        "language": parsed.language,
+                    },
+                )
 
             elif (
                 parsed.intent
