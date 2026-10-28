@@ -1213,6 +1213,31 @@ def _infer_alert_type(message: str) -> str:
     return "price_drop"
 
 
+def _is_smart_cart_mode_reply(message: str) -> bool:
+    """
+    Return True only for a short authorization answer that should
+    continue an already-pending Smart Cart flow.
+
+    A complete alert request such as "Notify me when this product
+    goes on sale" must be treated as a new alert instead of being
+    hijacked by stale Smart Cart state.
+    """
+    text = _normalize_catalog_text(message)
+
+    return text in {
+        "notify me",
+        "notify only",
+        "just notify me",
+        "only notify me",
+        "notification only",
+        "auto buy",
+        "autobuy",
+        "automatic purchase",
+        "buy automatically",
+        "automatically buy",
+    }
+
+
 def _pending_action_payload(
     parsed: ParsedCustomerMessage,
     *,
@@ -1246,11 +1271,100 @@ def _pending_action_payload(
     }
 
 
+def _recover_pending_smart_cart_from_history(
+    customer_id: str,
+    conversation_id: str,
+    state: dict[str, Any],
+) -> dict[str, Any] | None:
+    """
+    Recover the final Smart Cart clarification state from durable
+    conversation data when the explicit pending payload is missing.
+
+    This is intentionally narrow: it only activates when the
+    conversation's last intent is Smart Cart and a concrete variant
+    has already been resolved. The most recent user turn containing
+    a price/discount trigger is reused for the final authorization
+    reply (for example, "notify me").
+    """
+    if state.get("last_intent") != "smart_cart_create":
+        return None
+
+    variant_id = state.get("last_variant_id")
+    if not variant_id:
+        return None
+
+    try:
+        messages = chat_service.list_recent_messages(
+            customer_id,
+            conversation_id,
+            limit=12,
+        )
+    except Exception:
+        logger.exception(
+            "Could not recover Smart Cart state from conversation history"
+        )
+        return None
+
+    for row in reversed(messages):
+        if row.get("role") != "user":
+            continue
+
+        content = str(row.get("content") or "").strip()
+        if not content:
+            continue
+
+        try:
+            prior = customer_interaction_agent.parse(content)
+        except Exception:
+            continue
+
+        target_price = prior.entities.target_price
+        if target_price is None:
+            target_price = prior.entities.max_price
+
+        min_discount = prior.entities.min_discount_percentage
+
+        if target_price is None and min_discount is None:
+            continue
+
+        return {
+            "intent": "smart_cart_create",
+            "variant_id": str(variant_id),
+            "product_name": None,
+            "category": None,
+            "color": None,
+            "size": None,
+            "material": None,
+            "branch_name": None,
+            "quantity": 1,
+            "target_price": target_price,
+            "min_discount_percentage": min_discount,
+            "authorization_mode": None,
+            "alert_type": None,
+        }
+
+    return None
+
+
 def _resume_pending_action(
     parsed: ParsedCustomerMessage,
     state: dict[str, Any],
 ) -> ParsedCustomerMessage:
-    pending = state.get("pending_action")
+    # Smart Cart authorization replies are intentionally tiny messages
+    # such as "notify me" or "auto buy".  Keep a Smart-Cart-specific
+    # pending snapshot so that unrelated pending-action bookkeeping can
+    # never make the final authorization turn forget the product/variant
+    # and trigger that were already resolved on earlier turns.
+    smart_cart_pending = state.get("pending_smart_cart_action")
+
+    if (
+        _is_smart_cart_mode_reply(parsed.raw_message)
+        and isinstance(smart_cart_pending, dict)
+        and smart_cart_pending.get("intent") == "smart_cart_create"
+    ):
+        pending = smart_cart_pending
+    else:
+        pending = state.get("pending_action")
 
     if not isinstance(pending, dict):
         return parsed
@@ -1268,6 +1382,25 @@ def _resume_pending_action(
     }:
         return parsed
 
+    # A clear, complete alert request is a new action and must not be
+    # hijacked by stale Smart Cart clarification state. A terse answer
+    # such as "notify me" is different: it is the authorization reply
+    # to the pending Smart Cart flow and should resume that flow.
+    if (
+        pending_intent == "smart_cart_create"
+        and parsed.intent == "alert_create"
+        and not _is_smart_cart_mode_reply(parsed.raw_message)
+    ):
+        return parsed
+
+    # Likewise, an explicitly new Smart Cart request should not be
+    # overwritten by stale alert clarification state.
+    if (
+        pending_intent == "alert_create"
+        and parsed.intent == "smart_cart_create"
+    ):
+        return parsed
+
     # A clearly new shopping/location/support request cancels the old
     # clarification rather than being hijacked by stale pending state.
     if parsed.intent not in {
@@ -1280,6 +1413,30 @@ def _resume_pending_action(
     parsed.intent = pending_intent
 
     entities = parsed.entities
+
+    if (
+        pending_intent == "smart_cart_create"
+        and _is_smart_cart_mode_reply(parsed.raw_message)
+    ):
+        # The final authorization answer should only provide the mode.
+        # Product identity, resolved variant and trigger belong to the
+        # already-pending Smart Cart action and must not be re-resolved
+        # from the short text "notify me".
+        for field in (
+            "variant_id",
+            "product_name",
+            "category",
+            "color",
+            "size",
+            "material",
+            "branch_name",
+            "quantity",
+            "target_price",
+            "min_discount_percentage",
+        ):
+            value = pending.get(field)
+            if value is not None:
+                setattr(entities, field, value)
 
     for field in (
         "variant_id",
@@ -1870,6 +2027,128 @@ class OrchestratorAgent:
             )
         )
 
+        # ------------------------------------------------------------
+        # Deterministic Smart Cart authorization resume
+        # ------------------------------------------------------------
+        # A final reply such as "notify me" or "auto buy" belongs to
+        # the already-pending Smart Cart action.  Do not let the generic
+        # intent/item resolver reinterpret that short reply as a fresh
+        # alert or an unresolved product reference.
+        #
+        # This intentionally runs before the generic pending-action
+        # resumer.  Product identity, exact variant and trigger were
+        # resolved on earlier turns and are restored from conversation
+        # state here.
+        if _is_smart_cart_mode_reply(message):
+            pending_smart_cart = state.get(
+                "pending_smart_cart_action"
+            )
+
+            if not isinstance(pending_smart_cart, dict):
+                candidate_pending = state.get(
+                    "pending_action"
+                )
+
+                if (
+                    isinstance(candidate_pending, dict)
+                    and candidate_pending.get("intent")
+                    == "smart_cart_create"
+                ):
+                    pending_smart_cart = candidate_pending
+
+            # Fallback for the exact failure mode seen in the live UI:
+            # the authorization question was already shown, but the
+            # pending payload was not available on the next request.
+            # Reconstruct only the Smart Cart trigger from persisted
+            # conversation history and the already-resolved variant.
+            if not isinstance(pending_smart_cart, dict):
+                pending_smart_cart = (
+                    _recover_pending_smart_cart_from_history(
+                        customer_id,
+                        conversation_id,
+                        state,
+                    )
+                )
+
+                if isinstance(pending_smart_cart, dict):
+                    chat_service.merge_conversation_state(
+                        customer_id,
+                        conversation_id,
+                        {
+                            "pending_action": pending_smart_cart,
+                            "pending_smart_cart_action": pending_smart_cart,
+                        },
+                    )
+
+            if (
+                isinstance(pending_smart_cart, dict)
+                and pending_smart_cart.get("intent")
+                == "smart_cart_create"
+            ):
+                parsed.intent = "smart_cart_create"
+
+                entities = parsed.entities
+
+                # The authorization reply itself supplies only the mode.
+                normalized_mode_reply = _normalize_catalog_text(
+                    message
+                )
+
+                if normalized_mode_reply in {
+                    "auto buy",
+                    "autobuy",
+                    "automatic purchase",
+                    "buy automatically",
+                    "automatically buy",
+                }:
+                    entities.authorization_mode = "auto_buy"
+                else:
+                    entities.authorization_mode = "notify_only"
+
+                for field in (
+                    "product_name",
+                    "category",
+                    "color",
+                    "size",
+                    "material",
+                    "branch_name",
+                    "quantity",
+                    "target_price",
+                    "min_discount_percentage",
+                ):
+                    saved_value = pending_smart_cart.get(
+                        field
+                    )
+
+                    if saved_value is not None:
+                        setattr(
+                            entities,
+                            field,
+                            saved_value,
+                        )
+
+                saved_variant_id = (
+                    pending_smart_cart.get("variant_id")
+                    or state.get("last_variant_id")
+                )
+
+                if saved_variant_id:
+                    entities.variant_id = str(
+                        saved_variant_id
+                    )
+
+                # If a valid trigger and variant are already saved, the
+                # Smart Cart action is now complete and must proceed
+                # directly to rule creation.
+                has_trigger = (
+                    entities.target_price is not None
+                    or entities.min_discount_percentage is not None
+                )
+
+                if entities.variant_id and has_trigger:
+                    parsed.requires_clarification = False
+                    parsed.clarification_question = None
+
         # Feedback must win over accidental shopping/item intents.
         # Example: "The checkout experience was terrible and confusing"
         # previously matched purchase/cart wording and triggered an item
@@ -2015,12 +2294,53 @@ class OrchestratorAgent:
                         parsed,
                         state,
                     )
+                    candidates: list[dict[str, Any]] = []
 
                     if not resolved_variant:
-                        resolved_variant, _ = _resolve_named_action_variant(
+                        resolved_variant, candidates = _resolve_named_action_variant(
                             parsed=parsed,
                             state=state,
                             customer_id=customer_id,
+                        )
+
+                    if (
+                        not resolved_variant
+                        and parsed.entities.product_name
+                        and candidates
+                    ):
+                        candidate_ids = _unique_variant_ids_from_results(
+                            candidates
+                        )
+
+                        pending_payload = _pending_action_payload(parsed)
+                        pending_updates = {
+                            "pending_action": pending_payload,
+                            "last_search_variant_ids": candidate_ids,
+                        }
+
+                        if parsed.intent == "smart_cart_create":
+                            pending_updates["pending_smart_cart_action"] = (
+                                pending_payload
+                            )
+
+                        chat_service.merge_conversation_state(
+                            customer_id,
+                            conversation_id,
+                            pending_updates,
+                        )
+
+                        return self._finish_clarification(
+                            customer_id=customer_id,
+                            conversation_id=conversation_id,
+                            run_id=run_id,
+                            parsed=parsed,
+                            content=(
+                                f"I found multiple variants of "
+                                f"{parsed.entities.product_name}. "
+                                "Please specify the size/color or select one "
+                                "of the product cards first."
+                            ),
+                            update_state=False,
                         )
 
                     if resolved_variant:
@@ -2031,16 +2351,23 @@ class OrchestratorAgent:
                         variant_id=resolved_variant,
                     )
 
+                    pending_updates = {
+                        "pending_action": pending_payload,
+                        "last_variant_id": (
+                            resolved_variant
+                            or state.get("last_variant_id")
+                        ),
+                    }
+
+                    if parsed.intent == "smart_cart_create":
+                        pending_updates["pending_smart_cart_action"] = (
+                            pending_payload
+                        )
+
                     chat_service.merge_conversation_state(
                         customer_id,
                         conversation_id,
-                        {
-                            "pending_action": pending_payload,
-                            "last_variant_id": (
-                                resolved_variant
-                                or state.get("last_variant_id")
-                            ),
-                        },
+                        pending_updates,
                     )
 
                 return (
@@ -3512,6 +3839,19 @@ class OrchestratorAgent:
                         and parsed.entities.product_name
                         and candidates
                     ):
+                        candidate_ids = _unique_variant_ids_from_results(
+                            candidates
+                        )
+
+                        chat_service.merge_conversation_state(
+                            customer_id,
+                            conversation_id,
+                            {
+                                "pending_action": _pending_action_payload(parsed),
+                                "last_search_variant_ids": candidate_ids,
+                            },
+                        )
+
                         return self._finish_clarification(
                             customer_id=customer_id,
                             conversation_id=conversation_id,
@@ -3523,6 +3863,7 @@ class OrchestratorAgent:
                                 "Please specify the size/color or select one "
                                 "of the product cards first."
                             ),
+                            update_state=False,
                         )
 
                 if not variant_id:
@@ -3567,6 +3908,10 @@ class OrchestratorAgent:
                                 parsed,
                                 variant_id=variant_id,
                             ),
+                            "pending_smart_cart_action": _pending_action_payload(
+                                parsed,
+                                variant_id=variant_id,
+                            ),
                             "last_variant_id": variant_id,
                         },
                     )
@@ -3607,6 +3952,10 @@ class OrchestratorAgent:
                         conversation_id,
                         {
                             "pending_action": _pending_action_payload(
+                                parsed,
+                                variant_id=variant_id,
+                            ),
+                            "pending_smart_cart_action": _pending_action_payload(
                                 parsed,
                                 variant_id=variant_id,
                             ),
@@ -3733,6 +4082,8 @@ class OrchestratorAgent:
                                 rule["id"],
                             "pending_action":
                                 None,
+                            "pending_smart_cart_action":
+                                None,
                             "language":
                                 parsed.language,
                         },
@@ -3772,6 +4123,19 @@ class OrchestratorAgent:
                         and parsed.entities.product_name
                         and candidates
                     ):
+                        candidate_ids = _unique_variant_ids_from_results(
+                            candidates
+                        )
+
+                        chat_service.merge_conversation_state(
+                            customer_id,
+                            conversation_id,
+                            {
+                                "pending_action": _pending_action_payload(parsed),
+                                "last_search_variant_ids": candidate_ids,
+                            },
+                        )
+
                         return self._finish_clarification(
                             customer_id=customer_id,
                             conversation_id=conversation_id,
@@ -3783,6 +4147,7 @@ class OrchestratorAgent:
                                 "Please specify the size/color or select one "
                                 "of the product cards first."
                             ),
+                            update_state=False,
                         )
 
                 if not variant_id:

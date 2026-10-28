@@ -337,6 +337,15 @@ def _extract_product_name(
 
     patterns = [
         (
+            r"^\s*(?:let\s+me\s+know\s+if|notify\s+me\s+when|"
+            r"alert\s+me\s+when|tell\s+me\s+when)\s+"
+            r"(.+?)"
+            r"(?=,\s*(?:size|color|colour|material)\b|"
+            r"\s+(?:drops?|falls?|reaches?|goes?\s+on\s+sale|"
+            r"go\s+on\s+sale|is\s+back\s+in\s+stock|"
+            r"comes?\s+back\s+in\s+stock)\b)"
+        ),
+        (
             r"^\s*(?:do\s+you\s+have|have\s+you\s+got|"
             r"do\s+you\s+sell|is\s+there\s+any)\s+"
             r"(.+?)"
@@ -386,6 +395,23 @@ def _extract_product_name(
             continue
 
         value = match.group(1).strip()
+
+        normalized_reference = " ".join(
+            value.casefold().split()
+        )
+
+        if normalized_reference in {
+            "this",
+            "this one",
+            "this product",
+            "this item",
+            "that",
+            "that one",
+            "that product",
+            "that item",
+            "it",
+        }:
+            return None
 
         # Action quantities belong to the quantity entity, not the
         # catalog product name.
