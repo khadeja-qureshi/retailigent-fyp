@@ -168,14 +168,13 @@ export default function AdminPromotionsPage() {
 
   const loadPromotions =
     useCallback(async () => {
-      setLoading(true);
-      setError(null);
-
       try {
         const {
           data: { session },
-        } =
-          await supabase.auth.getSession();
+        } = await supabase.auth.getSession();
+
+        setLoading(true);
+        setError(null);
 
         if (!session) {
           throw new Error(
@@ -237,7 +236,7 @@ export default function AdminPromotionsPage() {
     }, []);
 
   useEffect(() => {
-    void loadPromotions();
+    void Promise.resolve().then(loadPromotions);
   }, [loadPromotions]);
 
   const filteredRows = useMemo(() => {

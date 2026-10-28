@@ -953,14 +953,16 @@ def _extract_authorization_mode(
                 "kharid",
             },
         )
-        and
-        _contains_any(
-            text,
-            {
-                "if",
-                "agar",
-                "when",
-            },
+        and (
+            _contains_any(
+                text,
+                {
+                    "if",
+                    "agar",
+                    "when",
+                },
+            )
+            or _extract_target_price(text) is not None
         )
     )
 
@@ -1380,6 +1382,47 @@ def classify_intent(
     if location_information_request:
         return "store_location_search"
 
+    # Broad catalog questions should not be interpreted as
+    # stock checks or purchase requests.
+    catalog_discovery_request = (
+        _contains_any(
+            text,
+            {
+                "what types of products",
+                "what type of products",
+                "what kinds of products",
+                "what kind of products",
+                "what categories",
+                "which categories",
+                "what products do you offer",
+                "what products do you sell",
+                "what products do you have",
+                "what items do you offer",
+                "what items do you sell",
+                "what kind of items can i buy",
+                "what types of items can i buy",
+                "what do you sell",
+                "what do you offer",
+                "what can i buy",
+                "aap kya kya sell karte",
+                "aap kya kya bechte",
+                "aap ke paas kya kya",
+                "ap ke paas kya kya",
+                "aap kay paas kya kya",
+                "kya kya sell karte",
+                "kya kya bechte",
+                "kya kya milta hai",
+                "kya kya milti hai",
+                "kon kon si categories",
+                "kaun si categories",
+            },
+        )
+    )
+
+    if catalog_discovery_request:
+        return "catalog_discovery"
+
+
     # --------------------------------------------------------------
     # KEEP THE REST OF YOUR EXISTING classify_intent()
     # CODE BELOW THIS POINT EXACTLY AS IT IS.
@@ -1439,24 +1482,37 @@ def classify_intent(
     ):
         return "alert_create"
 
+    has_purchase_intent = _contains_any(
+        text,
+        {
+            "buy",
+            "purchase",
+            "khareed",
+            "kharid",
+        },
+    )
+
+    has_explicit_condition = _contains_any(
+        text,
+        {
+            "if",
+            "agar",
+            "when",
+        },
+    )
+
+    # A numeric price threshold combined with a purchase request
+    # expresses a conditional purchase, even when "if" or "when"
+    # is omitted, e.g. "buy it below 1500".
+    has_price_threshold = (
+        _extract_target_price(text) is not None
+    )
+
     conditional_purchase = (
-        _contains_any(
-            text,
-            {
-                "if",
-                "agar",
-                "when",
-            },
-        )
-        and
-        _contains_any(
-            text,
-            {
-                "buy",
-                "purchase",
-                "khareed",
-                "kharid",
-            },
+        has_purchase_intent
+        and (
+            has_explicit_condition
+            or has_price_threshold
         )
     )
 

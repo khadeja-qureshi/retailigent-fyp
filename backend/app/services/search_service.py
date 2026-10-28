@@ -80,13 +80,64 @@ def _fetch_active_categories() -> list[dict[str, Any]]:
         supabase_admin
         .table("categories")
         .select(
-            "id, name, slug, parent_id"
+            "id, name, slug, parent_id, sort_order"
         )
         .eq("is_active", True)
         .execute()
     )
 
     return response.data or []
+
+
+def get_active_product_categories() -> list[str]:
+    """
+    Return active category names that contain active products.
+
+    Category names and ordering come from the database, not a
+    hardcoded catalog list.
+    """
+    product_response = (
+        supabase_admin
+        .table("products")
+        .select("category_id")
+        .eq("is_active", True)
+        .execute()
+    )
+
+    product_category_ids = {
+        str(product.get("category_id"))
+        for product in (product_response.data or [])
+        if product.get("category_id")
+    }
+
+    if not product_category_ids:
+        return []
+
+    categories = _fetch_active_categories()
+
+    matching_categories = [
+        category
+        for category in categories
+        if str(category.get("id") or "")
+        in product_category_ids
+        and str(category.get("name") or "").strip()
+    ]
+
+    matching_categories.sort(
+        key=lambda category: (
+            category.get("sort_order")
+            if isinstance(category.get("sort_order"), (int, float))
+            else 0,
+            str(category.get("name") or "").casefold(),
+        )
+    )
+
+    return list(
+        dict.fromkeys(
+            str(category["name"]).strip()
+            for category in matching_categories
+        )
+    )
 
 
 def _resolve_category_ids(

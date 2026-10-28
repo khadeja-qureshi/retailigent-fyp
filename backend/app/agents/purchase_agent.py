@@ -1,5 +1,5 @@
 from typing import Any
-
+from app.services.pricing_service import get_effective_prices
 from app.services.purchase_service import (
     convert_customer_reservation_to_purchase,
     execute_customer_purchase,
@@ -140,58 +140,128 @@ class PurchaseAgent:
         """
         Process a triggered Smart Cart auto-buy rule.
 
-        This is an internal system path. The customer
-        client never directly executes the purchase RPC.
+        Revalidate the rule's price conditions immediately before
+        purchase. Fail closed if authoritative pricing is unavailable.
         """
 
-        rule = (
-            get_smart_cart_rule_for_system(
-                rule_id
-            )
-        )
+        rule = get_smart_cart_rule_for_system(rule_id)
 
         if rule["status"] != "triggered":
             return {
                 "processed": False,
-                "reason":
-                    "rule_not_triggered",
+                "reason": "rule_not_triggered",
             }
 
-        if (
-            rule["authorization_mode"]
-            != "auto_buy"
-        ):
+        if rule["authorization_mode"] != "auto_buy":
             return {
                 "processed": False,
-                "reason":
-                    "not_auto_buy",
+                "reason": "not_auto_buy",
             }
 
-        branch_id = rule.get(
-            "branch_id"
-        )
+        # Never purchase using stale or unverified price conditions.
+        try:
+            pricing_by_variant = get_effective_prices(
+                [rule["variant_id"]]
+            )
+            pricing = pricing_by_variant.get(
+                str(rule["variant_id"])
+            )
 
-        idempotency_key = (
-            f"smart-cart:{rule['id']}"
-        )
+            if not pricing:
+                return {
+                    "processed": False,
+                    "reason": "price_unavailable",
+                }
+
+            from decimal import Decimal
+
+            effective_price = Decimal(
+                str(pricing["effective_price"])
+            )
+            regular_price = Decimal(
+                str(pricing["base_price"])
+            )
+
+            if (
+                not effective_price.is_finite()
+                or not regular_price.is_finite()
+                or effective_price < 0
+                or regular_price < 0
+            ):
+                return {
+                    "processed": False,
+                    "reason": "invalid_price",
+                }
+
+            target_price = rule.get("target_price")
+
+            if target_price is not None:
+                target = Decimal(str(target_price))
+
+                if (
+                    not target.is_finite()
+                    or target < 0
+                    or effective_price > target
+                ):
+                    return {
+                        "processed": False,
+                        "reason": "target_price_not_met",
+                    }
+
+            min_discount = rule.get(
+                "min_discount_percentage"
+            )
+
+            if min_discount is not None:
+                minimum_discount = Decimal(
+                    str(min_discount)
+                )
+
+                if (
+                    not minimum_discount.is_finite()
+                    or not Decimal("0")
+                    <= minimum_discount
+                    <= Decimal("100")
+                ):
+                    return {
+                        "processed": False,
+                        "reason": "invalid_discount_condition",
+                    }
+
+                if regular_price <= 0:
+                    return {
+                        "processed": False,
+                        "reason": "discount_unverifiable",
+                    }
+
+                actual_discount = (
+                    (regular_price - effective_price)
+                    / regular_price
+                    * Decimal("100")
+                )
+
+                if actual_discount < minimum_discount:
+                    return {
+                        "processed": False,
+                        "reason": "minimum_discount_not_met",
+                    }
+
+        except Exception:
+            return {
+                "processed": False,
+                "reason": "price_verification_failed",
+            }
+
+        branch_id = rule.get("branch_id")
+        idempotency_key = f"smart-cart:{rule['id']}"
 
         result = self.purchase_direct(
-            customer_id=(
-                rule["customer_id"]
-            ),
-            variant_id=(
-                rule["variant_id"]
-            ),
-            quantity=(
-                rule["quantity"]
-            ),
-            idempotency_key=(
-                idempotency_key
-            ),
+            customer_id=rule["customer_id"],
+            variant_id=rule["variant_id"],
+            quantity=rule["quantity"],
+            idempotency_key=idempotency_key,
             branch_id=branch_id,
-            smart_cart_rule_id=(
-                rule["id"]
-            ),
+            smart_cart_rule_id=rule["id"],
         )
 
         return {
@@ -199,6 +269,4 @@ class PurchaseAgent:
             "rule_id": rule["id"],
             "result": result,
         }
-
-
 purchase_agent = PurchaseAgent()

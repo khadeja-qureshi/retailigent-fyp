@@ -45,6 +45,7 @@ from app.schemas.chat import (
     OrderConfirmationBlock,
     ParsedCustomerMessage,
     ProductCard,
+    ProductSizeOption,
     ReservationBlock,
     RecommendationBlock,
     ProductCarouselBlock,
@@ -54,6 +55,7 @@ from app.schemas.chat import (
     WishlistBlock,
 )
 from app.services import chat_service, feedback_service
+from app.services.search_service import get_active_product_categories
 from app.services.feedback_service import (
     FeedbackServiceError,
 )
@@ -522,6 +524,13 @@ def plan_intent(
             tool_name="location_agent.search",
         )
 
+    if intent == "catalog_discovery":
+        return PlannedTask(
+            agent_key="product_agent",
+            task_type="catalog_discovery",
+            tool_name="search_service.get_active_product_categories",
+        )
+
     if intent == "recommendation_search":
         return PlannedTask(
             agent_key="recommendation_agent",
@@ -682,154 +691,105 @@ def _max_available(
 def build_product_carousel(
     results: list[dict],
 ) -> ProductCarouselBlock:
-    """
-    Validate Product Agent rows before exposing
-    them as chat blocks.
-    """
+    """Group product variants by product and color."""
 
-    products: list[
-        ProductCard
-    ] = []
+    grouped: dict[tuple[str, str], dict[str, Any]] = {}
 
     for result in results:
-        product = (
-            result.get(
-                "product"
-            )
-            or {}
-        )
+        product = result.get("product") or {}
+        variant = result.get("variant") or {}
+        pricing = result.get("pricing") or {}
 
-        variant = (
-            result.get(
-                "variant"
-            )
-            or {}
-        )
+        color = variant.get("color") or {}
+        size = variant.get("size") or {}
 
-        pricing = (
-            result.get(
-                "pricing"
-            )
-            or {}
-        )
+        product_id = result.get("product_id")
+        variant_id = result.get("variant_id")
+        name = product.get("name")
+        sku = variant.get("sku")
 
-        color = (
-            variant.get(
-                "color"
-            )
-            or {}
-        )
-
-        size = (
-            variant.get(
-                "size"
-            )
-            or {}
-        )
-
-        product_id = (
-            result.get(
-                "product_id"
-            )
-        )
-
-        variant_id = (
-            result.get(
-                "variant_id"
-            )
-        )
-
-        name = (
-            product.get(
-                "name"
-            )
-        )
-
-        sku = (
-            variant.get(
-                "sku"
-            )
-        )
-
-        if not all(
-            [
-                product_id,
-                variant_id,
-                name,
-                sku,
-            ]
-        ):
+        if not all([product_id, variant_id, name, sku]):
             continue
 
-        effective_price = (
-            pricing.get(
-                "effective_price"
-            )
+        product_id = str(product_id)
+        variant_id = str(variant_id)
+        color_name = color.get("name")
+        size_name = size.get("name")
+
+        key = (
+            product_id,
+            str(color_name or "").strip().casefold(),
         )
 
+        effective_price = pricing.get("effective_price")
         if effective_price is None:
-            effective_price = (
-                variant.get(
-                    "price"
-                )
-            )
+            effective_price = variant.get("price")
 
-        products.append(
-            ProductCard(
-                product_id=str(
-                    product_id
-                ),
-                variant_id=str(
-                    variant_id
-                ),
-                name=str(
-                    name
-                ),
-                sku=str(
-                    sku
-                ),
-                brand=(
-                    product.get(
-                        "brand"
-                    )
-                ),
-                material=(
-                    product.get(
-                        "material"
-                    )
-                ),
-                color=(
-                    color.get(
-                        "name"
-                    )
-                ),
-                size=(
-                    size.get(
-                        "name"
-                    )
-                ),
-                effective_price=(
-                    float(
-                        effective_price
-                    )
-                    if (
-                        effective_price
-                        is not None
-                    )
+        inventory = result.get("inventory") or []
+        quantities = [
+            max(0, int(row.get("available_quantity") or 0))
+            for row in inventory
+        ]
+
+        max_at_branch = max(quantities, default=0)
+        total_stock = sum(quantities)
+
+        group = grouped.get(key)
+
+        if group is None:
+            group = {
+                "product_id": product_id,
+                "variant_id": variant_id,
+                "name": str(name),
+                "sku": str(sku),
+                "brand": product.get("brand"),
+                "material": product.get("material"),
+                "color": color_name,
+                "effective_price": (
+                    float(effective_price)
+                    if effective_price is not None
                     else None
                 ),
-                image_url=(
-                    _primary_image_url(
-                        result
-                    )
+                "image_url": _primary_image_url(result),
+                "max_available_at_one_branch": max_at_branch,
+                "total_available_stock": 0,
+                "sizes": [],
+                "_seen_variants": set(),
+            }
+            grouped[key] = group
+
+        # Avoid counting a variant twice if search returns duplicate rows.
+        if variant_id in group["_seen_variants"]:
+            continue
+
+        group["_seen_variants"].add(variant_id)
+        group["total_available_stock"] += total_stock
+
+        group["sizes"].append(
+            ProductSizeOption(
+                variant_id=variant_id,
+                size=str(size_name) if size_name is not None else None,
+                sku=str(sku),
+                effective_price=(
+                    float(effective_price)
+                    if effective_price is not None
+                    else None
                 ),
-                max_available_at_one_branch=(
-                    _max_available(
-                        result
-                    )
-                ),
+                max_available_at_one_branch=max_at_branch,
+                total_available_stock=total_stock,
             )
         )
+
+        group["max_available_at_one_branch"] = max(
+            group["max_available_at_one_branch"],
+            max_at_branch,
+        )
+
+    products = []
+
+    for group in grouped.values():
+        group.pop("_seen_variants", None)
+        products.append(ProductCard(**group))
 
     return ProductCarouselBlock(
         title="Products",
@@ -1401,6 +1361,16 @@ def _resume_pending_action(
     ):
         return parsed
 
+    # A new conditional-buy request must never be hijacked
+    # by an older pending immediate purchase or reservation.
+    if (
+        parsed.intent == "smart_cart_create"
+        and pending_intent in {
+            "purchase",
+            "reservation_create",
+        }
+    ):
+        return parsed
     # A clearly new shopping/location/support request cancels the old
     # clarification rather than being hijacked by stale pending state.
     if parsed.intent not in {
@@ -2480,6 +2450,60 @@ class OrchestratorAgent:
 
                     blocks = [block]
 
+            elif parsed.intent == "catalog_discovery":
+                plan = plan_intent(parsed.intent)
+                assert plan is not None
+
+                try:
+                    categories = self._run_traced_tool(
+                        run_id=run_id,
+                        plan=plan,
+                        arguments={},
+                        call=get_active_product_categories,
+                    )
+                except Exception:
+                    logger.exception(
+                        "Catalog discovery failed for conversation %s",
+                        conversation_id,
+                    )
+                    categories = []
+
+                if categories:
+                    category_list = ", ".join(categories)
+
+                    if parsed.language == "english":
+                        content = (
+                            "We currently offer products in these categories: "
+                            f"{category_list}. "
+                            "Which category would you like to explore?"
+                        )
+                    else:
+                        content = (
+                            "Hamare paas in categories mein products "
+                            f"available hain: {category_list}. "
+                            "Aap kis category ke products dekhna chahein ge?"
+                        )
+                elif parsed.language == "english":
+                    content = (
+                        "I couldn't retrieve the available product categories "
+                        "right now. Please try again shortly."
+                    )
+                else:
+                    content = (
+                        "Abhi product categories retrieve nahi ho sakin. "
+                        "Meherbani karke kuch dair baad dobara try karein."
+                    )
+
+                chat_service.merge_conversation_state(
+                    customer_id,
+                    conversation_id,
+                    {
+                        "last_intent": parsed.intent,
+                        "language": parsed.language,
+                    },
+                )
+                blocks = []
+
             elif (
                 parsed.intent
                 == "preference_update"
@@ -3538,6 +3562,7 @@ class OrchestratorAgent:
                         "last_reservation_id": reservation_id,
                         "last_reservation_variant_id": variant_id,
                         "pending_action": None,
+                        "pending_smart_cart_action": None,
                         "language": parsed.language,
                     },
                 )

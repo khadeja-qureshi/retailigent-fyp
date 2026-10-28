@@ -1,23 +1,19 @@
+
 import type {
   ProductCarouselBlock as ProductCarouselBlockData,
 } from "@/lib/chat-types";
-
 
 interface Props {
   block: ProductCarouselBlockData;
 }
 
-
-function money(
-  value?: number | null
-) {
+function money(value?: number | null) {
   if (value == null) {
     return "Price unavailable";
   }
 
   return `Rs. ${value.toLocaleString()}`;
 }
-
 
 export default function ProductCarouselBlock({
   block,
@@ -39,17 +35,32 @@ export default function ProductCarouselBlock({
       </h3>
 
       <div className="flex gap-4 overflow-x-auto pb-3">
-        {block.products.map(
-            (product) => (
+        {block.products.map((product) => {
+          const sizes = product.sizes?.length
+            ? product.sizes
+            : [
+                {
+                  variant_id: product.variant_id,
+                  size: product.size,
+                  sku: product.sku,
+                  effective_price: product.effective_price,
+                  max_available_at_one_branch:
+                    product.max_available_at_one_branch ?? 0,
+                  total_available_stock:
+                    product.total_available_stock ?? 0,
+                },
+              ];
+
+          return (
             <article
-              key={product.variant_id}
-              className="w-64 shrink-0 overflow-hidden rounded-2xl border border-neutral-800 bg-neutral-900"
+              key={`${product.product_id}-${product.color ?? ""}`}
+              className="w-72 shrink-0 overflow-hidden rounded-2xl border border-neutral-800 bg-neutral-900"
             >
               {product.image_url ? (
-                /* eslint-disable-next-line @next/next/no-img-element */
+                // eslint-disable-next-line @next/next/no-img-element
                 <img
                   src={product.image_url}
-                  alt={product.name}
+                  alt={`${product.name}${product.color ? ` - ${product.color}` : ""}`}
                   className="h-64 w-full object-cover"
                 />
               ) : (
@@ -63,20 +74,16 @@ export default function ProductCarouselBlock({
                   {product.name}
                 </h4>
 
-                <p className="mt-1 text-xs text-neutral-500">
-                  {product.sku}
-                </p>
+                {product.brand && (
+                  <p className="mt-1 text-xs text-neutral-500">
+                    {product.brand}
+                  </p>
+                )}
 
                 <div className="mt-3 flex flex-wrap gap-2">
                   {product.color && (
                     <span className="rounded-full bg-neutral-800 px-2 py-1 text-xs text-neutral-300">
                       {product.color}
-                    </span>
-                  )}
-
-                  {product.size && (
-                    <span className="rounded-full bg-neutral-800 px-2 py-1 text-xs text-neutral-300">
-                      Size {product.size}
                     </span>
                   )}
 
@@ -87,28 +94,58 @@ export default function ProductCarouselBlock({
                   )}
                 </div>
 
-                <p className="mt-4 font-semibold">
-                  {money(
-                    product.effective_price
-                  )}
-                </p>
+                <div className="mt-4">
+                  <h5 className="text-xs font-medium uppercase tracking-wide text-neutral-400">
+                    Available sizes
+                  </h5>
 
-                <p className="mt-2 text-xs text-neutral-500">
-                  {(
-                    product
-                      .max_available_at_one_branch ??
-                    0
-                  ) > 0
-                    ? `Up to ${
-                        product
-                          .max_available_at_one_branch
-                      } available at one branch`
-                    : "Currently unavailable"}
-                </p>
+                  <div className="mt-2 space-y-2">
+                    {sizes.map((size) => (
+                      <div
+                        key={size.variant_id}
+                        className="flex items-center justify-between gap-3 rounded-lg border border-neutral-800 bg-neutral-950 px-3 py-2"
+                      >
+                        <div>
+                          <p className="text-sm font-medium">
+                            {size.size
+                              ? `Size ${size.size}`
+                              : "Standard size"}
+                          </p>
+
+                          <p className="text-xs text-neutral-500">
+                            {size.total_available_stock > 0
+                              ? `${size.total_available_stock} in stock across branches`
+                              : "Currently unavailable"}
+                          </p>
+                        </div>
+
+                        <p className="text-sm font-semibold">
+                          {money(size.effective_price)}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="mt-4 border-t border-neutral-800 pt-3">
+                  <p className="text-sm font-semibold">
+                    Combined stock:{" "}
+                    {product.total_available_stock ??
+                      sizes.reduce(
+                        (total, size) =>
+                          total + size.total_available_stock,
+                        0,
+                      )}
+                  </p>
+
+                  <p className="mt-1 text-xs text-neutral-500">
+                    Across the listed sizes and branches
+                  </p>
+                </div>
               </div>
             </article>
-          )
-        )}
+          );
+        })}
       </div>
     </section>
   );

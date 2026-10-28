@@ -163,6 +163,33 @@ def test_smart_cart_auto_buy_target():
         is False
     )
 
+@pytest.mark.parametrize(
+    ("message", "expected_price"),
+    [
+        ("buy it price falls below 1500 rupees", 1500),
+        ("buy it below 1500", 1500),
+        ("buy it if the price falls below 1500 rupees", 1500),
+        ("buy it when the price falls below 1500 rupees", 1500),
+    ],
+)
+def test_conditional_purchase_with_price_threshold(
+    message,
+    expected_price,
+):
+    parsed = customer_interaction_agent.parse(message)
+
+    assert parsed.intent == "smart_cart_create"
+    assert parsed.entities.target_price == expected_price
+    assert parsed.entities.authorization_mode == "auto_buy"
+    assert parsed.requires_clarification is False
+
+
+def test_immediate_purchase_still_works():
+    parsed = customer_interaction_agent.parse("buy it now")
+
+    assert parsed.intent == "purchase"
+    assert parsed.requires_clarification is False
+
 
 def test_smart_cart_notify_only():
     parsed = (
@@ -387,3 +414,38 @@ def test_product_search_still_works_after_availability_detection():
     assert parsed.intent == "product_search"
     assert parsed.entities.color == "Blue"
     assert parsed.entities.size == "M"
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        "What types of products do you have?",
+        "What categories do you sell?",
+        "What products do you offer?",
+        "What kind of items can I buy?",
+        "Aap kya kya sell karte hain?",
+        "Aap ke paas kya kya milta hai?",
+    ],
+)
+def test_catalog_discovery_questions_detect_catalog_discovery(
+    message,
+):
+    parsed = customer_interaction_agent.parse(message)
+
+    assert parsed.intent == "catalog_discovery"
+    assert parsed.requires_clarification is False
+
+
+def test_specific_product_search_remains_product_search():
+    parsed = customer_interaction_agent.parse(
+        "Show me blue kurtas size M"
+    )
+
+    assert parsed.intent == "product_search"
+
+
+def test_stock_question_remains_stock_check():
+    parsed = customer_interaction_agent.parse(
+        "Do you have blue kurtas in size M?"
+    )
+
+    assert parsed.intent == "stock_check"

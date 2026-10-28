@@ -81,13 +81,13 @@ export default function AdminInventoryPage() {
   const [stockFilter, setStockFilter] = useState("all");
 
   const loadInventory = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-
     try {
       const {
         data: { session },
       } = await supabase.auth.getSession();
+
+      setLoading(true);
+      setError(null);
 
       if (!session) {
         throw new Error("Please sign in with an authorized staff account.");
@@ -145,7 +145,7 @@ export default function AdminInventoryPage() {
   }, []);
 
   useEffect(() => {
-    void loadInventory();
+    void Promise.resolve().then(loadInventory);
   }, [loadInventory]);
 
   const branchOptions = useMemo(() => {

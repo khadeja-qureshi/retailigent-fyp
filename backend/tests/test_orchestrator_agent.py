@@ -2001,3 +2001,45 @@ def test_explicit_branch_stock_check_preserves_zero_stock_result():
     assert block.branches[0].branch_name == "Gulberg"
     assert block.branches[0].available_quantity == 0
     assert block.branches[0].status == "out_of_stock"
+
+
+def test_catalog_discovery_returns_active_product_categories(
+    monkeypatch,
+    fake_persistence,
+):
+    monkeypatch.setattr(
+        orchestrator_module,
+        "get_active_product_categories",
+        lambda: ["Shirts", "Shoes", "Slippers"],
+    )
+
+    response = orchestrator_agent.process_turn(
+        customer_id="customer-1",
+        message="What types of products do you have?",
+    )
+
+    assert response.conversation_id == "conversation-1"
+    assert "Shirts" in response.content
+    assert "Shoes" in response.content
+    assert "Slippers" in response.content
+    assert len(response.blocks) == 0
+
+
+def test_catalog_discovery_handles_empty_catalog(
+    monkeypatch,
+    fake_persistence,
+):
+    monkeypatch.setattr(
+        orchestrator_module,
+        "get_active_product_categories",
+        lambda: [],
+    )
+
+    response = orchestrator_agent.process_turn(
+        customer_id="customer-1",
+        message="What categories do you sell?",
+    )
+
+    assert response.conversation_id == "conversation-1"
+    assert "couldn't retrieve" in response.content.lower()
+    assert len(response.blocks) == 0

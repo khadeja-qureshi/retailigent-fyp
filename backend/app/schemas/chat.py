@@ -14,6 +14,14 @@ from pydantic import (
 # Product/search blocks
 # ---------------------------------------------------------------------------
 
+class ProductSizeOption(BaseModel):
+    variant_id: str
+    size: str | None = None
+    sku: str
+    effective_price: float | None = None
+    max_available_at_one_branch: int = 0
+    total_available_stock: int = 0
+
 
 class ProductCard(BaseModel):
     product_id: str
@@ -28,10 +36,17 @@ class ProductCard(BaseModel):
     size: str | None = None
 
     effective_price: float | None = None
-
     image_url: str | None = None
 
     max_available_at_one_branch: int | None = None
+
+    sizes: list[ProductSizeOption] = Field(
+        default_factory=list
+    )
+
+    total_available_stock: int = 0
+
+
 
 
 class ProductCarouselBlock(BaseModel):

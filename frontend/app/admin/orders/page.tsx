@@ -197,14 +197,13 @@ export default function AdminOrdersPage() {
 
   const loadOrders =
     useCallback(async () => {
-      setLoading(true);
-      setError(null);
-
       try {
         const {
           data: { session },
-        } =
-          await supabase.auth.getSession();
+        } = await supabase.auth.getSession();
+
+        setLoading(true);
+        setError(null);
 
         if (!session) {
           throw new Error(
@@ -277,7 +276,7 @@ export default function AdminOrdersPage() {
     }, []);
 
   useEffect(() => {
-    void loadOrders();
+    void Promise.resolve().then(loadOrders);
   }, [loadOrders]);
 
   const statuses = useMemo(() => {

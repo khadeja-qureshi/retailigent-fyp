@@ -776,19 +776,22 @@ useEffect(() => {
 
   restoreAttemptedRef.current = true;
 
-  const savedConversationId =
-    window.localStorage.getItem(
-      ACTIVE_CONVERSATION_STORAGE_KEY
-    );
+  const savedConversationId = window.localStorage.getItem(
+    ACTIVE_CONVERSATION_STORAGE_KEY,
+  );
 
   if (!savedConversationId) {
-    setIsRestoringConversation(false);
+    void Promise.resolve().then(() => {
+      setIsRestoringConversation(false);
+    });
     return;
   }
 
-  void loadConversation(savedConversationId).finally(() => {
-    setIsRestoringConversation(false);
-  });
+  void Promise.resolve()
+    .then(() => loadConversation(savedConversationId))
+    .finally(() => {
+      setIsRestoringConversation(false);
+    });
 }, [loadConversation]);
 
   return {

@@ -13,6 +13,14 @@ export type ChatLanguage =
   | "roman_urdu"
   | "mixed";
 
+export interface ProductSizeOption {
+  variant_id: string;
+  size?: string | null;
+  sku: string;
+  effective_price?: number | null;
+  max_available_at_one_branch: number;
+  total_available_stock: number;
+}
 
 export interface ProductCardData {
   product_id: string;
@@ -25,6 +33,9 @@ export interface ProductCardData {
   material?: string | null;
   color?: string | null;
   size?: string | null;
+
+  sizes?: ProductSizeOption[];
+  total_available_stock?: number;
 
   effective_price?:
     | number
