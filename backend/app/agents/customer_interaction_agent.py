@@ -1382,6 +1382,34 @@ def classify_intent(
     if location_information_request:
         return "store_location_search"
 
+    # Explicit requests to browse the complete catalog must bypass
+    # semantic search, which can over-rank one product category.
+    catalog_browse_request = _contains_any(
+        text,
+        {
+            "show all products",
+            "show me all products",
+            "browse all products",
+            "browse products",
+            "all products",
+            "show all items",
+            "show me all items",
+            "browse all items",
+            "show everything",
+            "show me everything",
+            "sab products dikhao",
+            "saare products dikhao",
+            "saray products dikhao",
+            "tamam products dikhao",
+            "sab items dikhao",
+            "saari cheezen dikhao",
+            "saari cheezein dikhao",
+        },
+    )
+
+    if catalog_browse_request:
+        return "catalog_browse"
+
     # Broad catalog questions should not be interpreted as
     # stock checks or purchase requests.
     catalog_discovery_request = (

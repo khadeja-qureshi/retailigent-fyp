@@ -524,6 +524,13 @@ def plan_intent(
             tool_name="location_agent.search",
         )
 
+    if intent == "catalog_browse":
+        return PlannedTask(
+            agent_key="product_agent",
+            task_type="catalog_browse",
+            tool_name="product_agent.browse_all",
+        )
+
     if intent == "catalog_discovery":
         return PlannedTask(
             agent_key="product_agent",
@@ -2449,6 +2456,51 @@ class OrchestratorAgent:
                         )
 
                     blocks = [block]
+
+            elif parsed.intent == "catalog_browse":
+                plan = plan_intent(parsed.intent)
+                assert plan is not None
+
+                arguments = {"match_count": 10}
+                results = self._run_traced_tool(
+                    run_id=run_id,
+                    plan=plan,
+                    arguments=arguments,
+                    call=lambda: product_agent.browse_all(**arguments),
+                )
+
+                block = build_product_carousel(results)
+                variant_ids = [
+                    product.variant_id
+                    for product in block.products
+                ]
+
+                updates = {
+                    "last_intent": parsed.intent,
+                    "language": parsed.language,
+                    "last_search_variant_ids": variant_ids,
+                }
+
+                if variant_ids:
+                    updates["last_variant_id"] = variant_ids[0]
+
+                chat_service.merge_conversation_state(
+                    customer_id,
+                    conversation_id,
+                    updates,
+                )
+
+                if block.products:
+                    content = (
+                        "Here are products from across our available "
+                        "categories."
+                    )
+                    blocks = [block]
+                else:
+                    content = (
+                        "There are no active products to display right now."
+                    )
+                    blocks = []
 
             elif parsed.intent == "catalog_discovery":
                 plan = plan_intent(parsed.intent)

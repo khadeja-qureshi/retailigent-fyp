@@ -3,6 +3,7 @@ from typing import Any, Optional
 from app.services.search_service import (
     search_variants,
     search_variants_by_category,
+    search_all_active_variants,
 )
 from app.services.demand_signal_service import record_demand_signal
 
@@ -153,6 +154,69 @@ class ProductAgent:
     retrieval so correctness-sensitive attributes such as color,
     size, price, and branch/city are not left to semantic similarity.
     """
+
+    def browse_all(
+        self,
+        match_count: int = 10,
+    ) -> list[dict[str, Any]]:
+        """
+        Browse active products across categories without semantic bias.
+
+        The carousel receives a category- and product-diversified selection
+        instead of being dominated by the first category in the database.
+        """
+        results = search_all_active_variants()
+
+        if not results:
+            return []
+
+        # Preserve catalog order within each category and product.
+        categories: dict[str, dict[str, list[dict[str, Any]]]] = {}
+        category_order: list[str] = []
+
+        for index, result in enumerate(results):
+            product = result.get("product") or {}
+            category = product.get("category") or {}
+
+            category_key = str(
+                category.get("id")
+                or category.get("name")
+                or "__uncategorized__"
+            )
+            product_key = str(
+                result.get("product_id")
+                or product.get("id")
+                or f"__missing_product_{index}"
+            )
+
+            if category_key not in categories:
+                categories[category_key] = {}
+                category_order.append(category_key)
+
+            categories[category_key].setdefault(
+                product_key, []
+            ).append(result)
+
+        diversified: list[dict[str, Any]] = []
+        depth = 0
+
+        while True:
+            added_any = False
+
+            for category_key in category_order:
+                products_in_category = categories[category_key]
+
+                for product_variants in products_in_category.values():
+                    if depth < len(product_variants):
+                        diversified.append(product_variants[depth])
+                        added_any = True
+
+            if not added_any:
+                break
+
+            depth += 1
+
+        return diversified[:max(1, match_count)]
 
     def search(
         self,

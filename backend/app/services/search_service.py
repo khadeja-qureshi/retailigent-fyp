@@ -669,6 +669,91 @@ def search_variants(
     )
 
 
+def search_all_active_variants() -> list[dict[str, Any]]:
+    """
+    Retrieve active variants across the complete active product catalog.
+
+    This browse path deliberately avoids embeddings and semantic ranking.
+    Database enrichment remains responsible for authoritative product,
+    variant, category, pricing, inventory, and image data.
+    """
+    page_size = 500
+
+    def fetch_active_rows(
+        table_name: str,
+        columns: str,
+        product_ids: list[str] | None = None,
+    ) -> list[dict[str, Any]]:
+        rows: list[dict[str, Any]] = []
+        offset = 0
+
+        while True:
+            query = (
+                supabase_admin
+                .table(table_name)
+                .select(columns)
+                .eq("is_active", True)
+            )
+
+            if product_ids is not None:
+                query = query.in_("product_id", product_ids)
+
+            response = (
+                query
+                .range(offset, offset + page_size - 1)
+                .execute()
+            )
+            page = response.data or []
+            rows.extend(page)
+
+            if len(page) < page_size:
+                break
+
+            offset += page_size
+
+        return rows
+
+    products = fetch_active_rows(
+        "products",
+        "id",
+    )
+    product_ids = sorted({
+        str(product["id"])
+        for product in products
+        if product.get("id")
+    })
+
+    if not product_ids:
+        return []
+
+    variants = fetch_active_rows(
+        "product_variants",
+        "id, product_id",
+        product_ids,
+    )
+
+    matches = [
+        {
+            "variant_id": str(variant["id"]),
+            "product_id": str(variant["product_id"]),
+            "combined_score": 0.0,
+            "keyword_score": 0.0,
+            "semantic_score": 0.0,
+        }
+        for variant in variants
+        if variant.get("id") and variant.get("product_id")
+    ]
+
+    matches.sort(
+        key=lambda item: (
+            item["product_id"],
+            item["variant_id"],
+        )
+    )
+
+    return _enrich_search_matches(matches)
+
+
 def search_variants_by_category(
     *,
     category: str,
