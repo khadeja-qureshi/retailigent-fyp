@@ -420,7 +420,7 @@ def _enrich_search_matches(
         supabase_admin
         .table("product_images")
         .select(
-            "id, product_id, image_url, alt_text, "
+            "id, product_id, variant_id, image_url, alt_text, "
             "sort_order, is_primary"
         )
         .in_("product_id", list(product_ids))
@@ -428,7 +428,12 @@ def _enrich_search_matches(
         .execute()
     )
 
-    images_by_product: dict[
+    images_by_variant: dict[
+        str,
+        list[dict[str, Any]],
+    ] = {}
+
+    images_without_variant_by_product: dict[
         str,
         list[dict[str, Any]],
     ] = {}
@@ -437,10 +442,19 @@ def _enrich_search_matches(
         image_response.data
         or []
     ):
-        images_by_product.setdefault(
-            str(image["product_id"]),
-            [],
-        ).append(image)
+        product_id_for_image = str(image["product_id"])
+        variant_id_for_image = image.get("variant_id")
+
+        if variant_id_for_image:
+            images_by_variant.setdefault(
+                str(variant_id_for_image),
+                [],
+            ).append(image)
+        else:
+            images_without_variant_by_product.setdefault(
+                product_id_for_image,
+                [],
+            ).append(image)
 
     inventory_response = (
         supabase_admin
@@ -605,7 +619,10 @@ def _enrich_search_matches(
                     )
                 ),
                 "images": (
-                    images_by_product.get(
+                    images_by_variant.get(
+                        variant_id,
+                    )
+                    or images_without_variant_by_product.get(
                         product_id,
                         [],
                     )
