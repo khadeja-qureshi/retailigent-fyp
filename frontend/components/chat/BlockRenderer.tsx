@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  useEffect,
   useState,
 } from "react";
 
@@ -19,6 +20,7 @@ import WishlistBlock from "@/components/chat-blocks/WishlistBlock";
 import {
   cancelSmartCartRule,
   deleteAlert,
+  getSmartCartRule,
   markNotificationsRead,
   pauseAlert,
   pauseSmartCartRule,
@@ -409,6 +411,40 @@ function SmartCartBlockAdapter({
     null
   );
 
+
+  useEffect(() => {
+    if (
+      rule.status === "completed" ||
+      rule.status === "cancelled"
+    ) {
+      return;
+    }
+
+    let active = true;
+
+    async function refreshRule() {
+      try {
+        const latest = await getSmartCartRule(rule.id);
+
+        if (active) {
+          setRule(latest);
+        }
+      } catch {
+        // Keep the existing card visible if a refresh fails.
+      }
+    }
+
+    void refreshRule();
+
+    const intervalId = window.setInterval(() => {
+      void refreshRule();
+    }, 5000);
+
+    return () => {
+      active = false;
+      window.clearInterval(intervalId);
+    };
+  }, [rule.id, rule.status]);
 
   async function perform(
     action: () =>

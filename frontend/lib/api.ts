@@ -665,6 +665,13 @@ export function getSmartCartRules() {
 }
 
 
+export function getSmartCartRule(ruleId: string) {
+  return apiFetch<SmartCartRule>(
+    `/api/v1/smart-cart/${ruleId}`
+  );
+}
+
+
 export function createSmartCartRule(
   payload: {
     variant_id: string;
